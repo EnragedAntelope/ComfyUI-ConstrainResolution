@@ -51,24 +51,67 @@ class ConstrainResolution:
     def calculate_optimal_dimensions(width: int, height: int, min_res: int, max_res: int) -> Tuple[int, int]:
         aspect_ratio = width / height
         
+        # Calculate maximum allowed pixels based on max_res x min_res
+        max_pixels = max_res * min_res
+        
+        if abs(aspect_ratio - 1.0) < 0.01:  # Square image (with small tolerance)
+            # Calculate optimal square dimension based on max pixels
+            optimal_dim = int(np.sqrt(max_pixels))
+            # Round up to nearest even number
+            optimal_dim = optimal_dim + (optimal_dim % 2)
+            # Ensure it's within min/max bounds
+            optimal_dim = min(max(optimal_dim, min_res), max_res)
+            return optimal_dim, optimal_dim
+            
         if aspect_ratio > 1:  # Landscape
-            if width > max_res:
-                width = max_res
+            # First try to set width to max_res
+            width = max_res
+            height = int(width / aspect_ratio)
+            
+            # If total pixels exceed max_pixels, scale down proportionally
+            if width * height > max_pixels:
+                width = int(np.sqrt(max_pixels * aspect_ratio))
+                # Round up to nearest even number
+                width = width + (width % 2)
                 height = int(width / aspect_ratio)
+                # Round up to nearest even number
+                height = height + (height % 2)
+            
+            # Check minimum bounds
             if height < min_res:
                 height = min_res
                 width = int(height * aspect_ratio)
+                width = width + (width % 2)
         else:  # Portrait
-            if height > max_res:
-                height = max_res
+            # First try to set height to max_res
+            height = max_res
+            width = int(height * aspect_ratio)
+            
+            # If total pixels exceed max_pixels, scale down proportionally
+            if width * height > max_pixels:
+                height = int(np.sqrt(max_pixels / aspect_ratio))
+                # Round up to nearest even number
+                height = height + (height % 2)
                 width = int(height * aspect_ratio)
+                # Round up to nearest even number
+                width = width + (width % 2)
+            
+            # Check minimum bounds
             if width < min_res:
                 width = min_res
                 height = int(width / aspect_ratio)
+                height = height + (height % 2)
 
         # Final bounds check
         width = min(max(width, min_res), max_res)
         height = min(max(height, min_res), max_res)
+        
+        # Final pixel count check (just in case rounding pushed us over)
+        while width * height > max_pixels:
+            if width > height:
+                width = width - 2  # Reduce by 2 to keep even numbers
+            else:
+                height = height - 2
         
         return width, height
 
