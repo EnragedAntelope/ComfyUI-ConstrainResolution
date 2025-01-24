@@ -29,15 +29,15 @@ class ConstrainResolution:
         }
 
     RETURN_TYPES = ("IMAGE", "INT", "INT", "FLOAT", "FLOAT")
-    RETURN_NAMES = ("Image", "Constrained Width", "Constrained Height", "Constrained Aspect Ratio", "Original Aspect Ratio")
+    RETURN_NAMES = ("image_passthrough", "constrained_width", "constrained_height", "constrained_aspect_ratio", "original_aspect_ratio")
     
     # Add tooltips for outputs
     RETURN_TYPES_TOOLTIPS = {
-        "Image": "The unchanged input image (passed through)",
-        "Constrained Width": "Suggested width that fits within min/max constraints while preserving aspect ratio",
-        "Constrained Height": "Suggested height that fits within min/max constraints while preserving aspect ratio",
-        "Constrained Aspect Ratio": "The aspect ratio of the constrained dimensions",
-        "Original Aspect Ratio": "The original aspect ratio of the input image"
+        "image_passthrough": "The unchanged input image (passed through)",
+        "constrained_width": "Suggested width that fits within min/max constraints while preserving aspect ratio",
+        "constrained_height": "Suggested height that fits within min/max constraints while preserving aspect ratio",
+        "constrained_aspect_ratio": "The aspect ratio of the constrained dimensions",
+        "original_aspect_ratio": "The original aspect ratio of the input image"
     }
     
     FUNCTION = "process"
