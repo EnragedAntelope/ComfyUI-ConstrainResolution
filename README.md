@@ -45,9 +45,7 @@ Use Comfy Manager or:
 
 1. Create a `custom_nodes` folder in your ComfyUI directory if it doesn't exist
 2. Clone this repository into the `custom_nodes` folder:
-
-git clone https://github.com/EnragedAntelope/ComfyUI-Constrain-Resolution
-
+    git clone https://github.com/EnragedAntelope/ComfyUI-Constrain-Resolution
 
 ## License
 
