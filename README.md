@@ -35,8 +35,7 @@ A ComfyUI node that analyzes images and suggests optimal dimensions while preser
 4. Use the `Constrained Width` and `Constrained Height` outputs to set the dimensions in your resize node
 
 Example:
-![image](https://github.com/user-attachments/assets/70145782-490d-4a51-a458-71e0ec6e4c44)
-
+![image](https://github.com/user-attachments/assets/37ab8e79-f260-490d-b1c9-c152d2858a09)
 
 ### Common Use Cases
 
