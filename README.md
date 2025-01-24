@@ -1,9 +1,8 @@
 # ComfyUI Constrain Resolution Node
 
-![image](https://github.com/user-attachments/assets/3c6784be-2b87-47c8-81f4-bd3050cc0719)
-
-
 A ComfyUI node that analyzes images and suggests optimal dimensions while preserving aspect ratio. This node is particularly useful in image-to-image and image-to-video workflows where maintaining aspect ratios and resolution constraints is crucial.
+
+![image](https://github.com/user-attachments/assets/3c6784be-2b87-47c8-81f4-bd3050cc0719)
 
 ## Features
 
