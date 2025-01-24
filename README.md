@@ -2,7 +2,8 @@
 
 A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images and suggests optimal dimensions while preserving aspect ratio. This node is particularly useful in image-to-image and image-to-video workflows where maintaining aspect ratios and resolution constraints is crucial.
 
-![image](https://github.com/user-attachments/assets/3c6784be-2b87-47c8-81f4-bd3050cc0719)
+![image](https://github.com/user-attachments/assets/a5934b47-12d2-47ec-9db5-765648aa76be)
+
 
 ## Features
 
@@ -35,7 +36,8 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images
 4. Use the `Constrained Width` and `Constrained Height` outputs to set the dimensions in your resize node
 
 Example:
-![image](https://github.com/user-attachments/assets/f4d80b5e-559e-4c46-92fa-3fac52b9d215)
+![image](https://github.com/user-attachments/assets/8a47cba5-be81-4053-89f5-234cac007448)
+
 
 ### Common Use Cases
 
