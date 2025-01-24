@@ -1,6 +1,6 @@
 # ComfyUI Constrain Resolution Node
 
-A ComfyUI node that analyzes images and suggests optimal dimensions while preserving aspect ratio. This node is particularly useful in image-to-image and image-to-video workflows where maintaining aspect ratios and resolution constraints is crucial.
+A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images and suggests optimal dimensions while preserving aspect ratio. This node is particularly useful in image-to-image and image-to-video workflows where maintaining aspect ratios and resolution constraints is crucial.
 
 ![image](https://github.com/user-attachments/assets/3c6784be-2b87-47c8-81f4-bd3050cc0719)
 
@@ -46,11 +46,13 @@ Example:
 
 ## Installation
 
-Use Comfy Manager or: 
+Use [ComfyUI Manager](https://github.com/ltdrdata/ComfyUI-Manager) or follow these manual installation steps:
 
 1. Create a `custom_nodes` folder in your ComfyUI directory if it doesn't exist
 2. Clone this repository into the `custom_nodes` folder:
-    git clone https://github.com/EnragedAntelope/ComfyUI-Constrain-Resolution
+   ```bash
+   git clone https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution.git
+   ```
 
 ## License
 
