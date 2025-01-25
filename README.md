@@ -34,7 +34,7 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images
 1. Connect your image source to the `Image` input
 2. Set your desired minimum and maximum resolution constraints
 3. Set the "Multiple Of" value based on your model requirements (e.g., 8 for SDXL)
-4. Connect the `Image` output to your preferred resize node (e.g., Image Resize)
+4. Connect the `Image Passthrough` output to your preferred resize node (e.g., Image Resize)
 5. Use the `Constrained Width` and `Constrained Height` outputs to set the dimensions in your resize node
 
 Example:
