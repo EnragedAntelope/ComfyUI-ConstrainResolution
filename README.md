@@ -9,6 +9,7 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images
 
 - Analyzes input images and suggests optimal dimensions
 - Preserves aspect ratio while fitting within minimum and maximum resolution constraints
+- Ensures dimensions are multiples of a specified number (useful for models requiring specific dimension constraints)
 - Handles both landscape and portrait orientations
 - Passes through the original image unmodified for chaining with other nodes
 - Provides both constrained dimensions and aspect ratio information
@@ -18,12 +19,13 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images
 - **Image**: The input image to analyze (required)
 - **Min Resolution**: Minimum resolution in pixels for both width and height
 - **Max Resolution**: Maximum resolution in pixels for both width and height
+- **Multiple Of**: Ensure dimensions are multiples of this number (e.g., 8 for SD-XL, 16 for some models)
 
 ## Outputs
 
 - **Image**: The unchanged input image (passed through)
-- **Constrained Width**: Suggested width that fits within min/max constraints
-- **Constrained Height**: Suggested height that fits within min/max constraints
+- **Constrained Width**: Suggested width that fits within min/max constraints and multiple-of requirement
+- **Constrained Height**: Suggested height that fits within min/max constraints and multiple-of requirement
 - **Constrained Aspect Ratio**: The aspect ratio of the constrained dimensions
 - **Original Aspect Ratio**: The original aspect ratio of the input image
 
@@ -32,8 +34,9 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images
 ### Basic Workflow
 1. Connect your image source to the `Image` input
 2. Set your desired minimum and maximum resolution constraints
-3. Connect the `Image` output to your preferred resize node (e.g., Image Resize)
-4. Use the `Constrained Width` and `Constrained Height` outputs to set the dimensions in your resize node
+3. Set the "Multiple Of" value based on your model requirements (e.g., 8 for SDXL)
+4. Connect the `Image` output to your preferred resize node (e.g., Image Resize)
+5. Use the `Constrained Width` and `Constrained Height` outputs to set the dimensions in your resize node
 
 Example:
 ![image](https://github.com/user-attachments/assets/8a47cba5-be81-4053-89f5-234cac007448)
@@ -45,6 +48,7 @@ Example:
 - **Image-to-Video**: Prepare frames with proper dimensions for video generation
 - **Batch Processing**: Standardize image dimensions across multiple images
 - **Resolution Optimization**: Find optimal dimensions for specific model requirements
+- **Model Compatibility**: Ensure dimensions meet specific model requirements (e.g., multiples of 8 or 16)
 
 ## Installation
 
