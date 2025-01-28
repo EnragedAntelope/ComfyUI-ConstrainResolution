@@ -61,4 +61,4 @@ Use [ComfyUI Manager](https://github.com/ltdrdata/ComfyUI-Manager) or follow the
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+See the [LICENSE](LICENSE) file for details.
