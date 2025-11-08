@@ -2,16 +2,22 @@ import torch
 import torch.nn.functional as F
 from typing import Tuple
 from comfy_api.latest import ComfyExtension, io
+from enum import StrEnum
 
 
-class ConstraintModeEnum(io.ComboInput):
+class ConstraintMode(StrEnum):
     """Constraint mode for handling extreme aspect ratios"""
-    OPTIONS = ["Prioritize Min Resolution", "Prioritize Max Resolution (Strict)"]
+    MIN_RES = "Prioritize Min Resolution"
+    MAX_RES_STRICT = "Prioritize Max Resolution (Strict)"
 
 
-class CropPositionEnum(io.ComboInput):
+class CropPosition(StrEnum):
     """Position for cropping when aspect ratios don't match"""
-    OPTIONS = ["center", "top", "bottom", "left", "right"]
+    CENTER = "center"
+    TOP = "top"
+    BOTTOM = "bottom"
+    LEFT = "left"
+    RIGHT = "right"
 
 
 class ConstrainResolution(io.ComfyNode):
@@ -73,9 +79,9 @@ class ConstrainResolution(io.ComfyNode):
                 ),
 
                 # Constraint behavior
-                ConstraintModeEnum.Input(
+                ConstraintMode.Input(
                     "constraint_mode",
-                    default="Prioritize Min Resolution",
+                    default=ConstraintMode.MIN_RES,
                     tooltip=(
                         "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
                         "• Prioritize Min Resolution: Ensures neither dimension falls below min_res (may exceed max_res)\n"
@@ -92,9 +98,9 @@ class ConstrainResolution(io.ComfyNode):
                         "Disable if preserving the entire image is more important than exact dimensions."
                     )
                 ),
-                CropPositionEnum.Input(
+                CropPosition.Input(
                     "crop_position",
-                    default="center",
+                    default=CropPosition.CENTER,
                     tooltip=(
                         "Where to crop from when 'Crop as Required' is enabled.\n"
                         "• center: Crop equally from all sides\n"
@@ -188,7 +194,7 @@ class ConstrainResolution(io.ComfyNode):
             new_width = new_height * aspect_ratio
 
         # 2. Apply constraint logic based on user's choice
-        if constraint_mode == "Prioritize Min Resolution":
+        if constraint_mode == ConstraintMode.MIN_RES:
             # If a dimension is below min_res, scale the entire image up to meet it
             scale_factor = 1.0
             if new_width < min_res:
