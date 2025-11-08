@@ -79,7 +79,8 @@ class ConstrainResolution(io.ComfyNode):
                 ),
 
                 # Constraint behavior
-                ConstraintMode.Input(
+                io.Enum.Input(
+                    ConstraintMode,
                     "constraint_mode",
                     default=ConstraintMode.MIN_RES,
                     tooltip=(
@@ -98,7 +99,8 @@ class ConstrainResolution(io.ComfyNode):
                         "Disable if preserving the entire image is more important than exact dimensions."
                     )
                 ),
-                CropPosition.Input(
+                io.Enum.Input(
+                    CropPosition,
                     "crop_position",
                     default=CropPosition.CENTER,
                     tooltip=(
