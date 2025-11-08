@@ -82,7 +82,7 @@ class ConstrainResolution(io.ComfyNode):
                 io.Input(
                     "constraint_mode",
                     ConstraintMode,
-                    default=ConstraintMode.MIN_RES,
+                    ConstraintMode.MIN_RES,  # Default value as a positional argument
                     tooltip=(
                         "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
                         "• Prioritize Min Resolution: Ensures neither dimension falls below min_res (may exceed max_res)\n"
@@ -102,7 +102,7 @@ class ConstrainResolution(io.ComfyNode):
                 io.Input(
                     "crop_position",
                     CropPosition,
-                    default=CropPosition.CENTER,
+                    CropPosition.CENTER,  # Default value as a positional argument
                     tooltip=(
                         "Where to crop from when 'Crop as Required' is enabled.\n"
                         "• center: Crop equally from all sides\n"
