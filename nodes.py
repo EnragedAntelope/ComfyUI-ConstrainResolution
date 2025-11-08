@@ -79,10 +79,10 @@ class ConstrainResolution(io.ComfyNode):
                 ),
 
                 # Constraint behavior
-                io.Input(
+                io.String.Input(
                     "constraint_mode",
-                    ConstraintMode,
-                    ConstraintMode.MIN_RES,  # Default value as a positional argument
+                    default=ConstraintMode.MIN_RES.value,
+                    display=f"combo[{', '.join([e.value for e in ConstraintMode])}]",
                     tooltip=(
                         "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
                         "• Prioritize Min Resolution: Ensures neither dimension falls below min_res (may exceed max_res)\n"
@@ -99,10 +99,10 @@ class ConstrainResolution(io.ComfyNode):
                         "Disable if preserving the entire image is more important than exact dimensions."
                     )
                 ),
-                io.Input(
+                io.String.Input(
                     "crop_position",
-                    CropPosition,
-                    CropPosition.CENTER,  # Default value as a positional argument
+                    default=CropPosition.CENTER.value,
+                    display=f"combo[{', '.join([e.value for e in CropPosition])}]",
                     tooltip=(
                         "Where to crop from when 'Crop as Required' is enabled.\n"
                         "• center: Crop equally from all sides\n"
@@ -179,7 +179,7 @@ class ConstrainResolution(io.ComfyNode):
         min_res: int,
         max_res: int,
         multiple_of: int,
-        constraint_mode: ConstraintMode
+        constraint_mode: str
     ) -> Tuple[int, int]:
         """Calculate optimal dimensions based on constraints"""
         if height == 0 or width == 0:
@@ -196,7 +196,7 @@ class ConstrainResolution(io.ComfyNode):
             new_width = new_height * aspect_ratio
 
         # 2. Apply constraint logic based on user's choice
-        if constraint_mode == ConstraintMode.MIN_RES:
+        if constraint_mode == ConstraintMode.MIN_RES.value:
             # If a dimension is below min_res, scale the entire image up to meet it
             scale_factor = 1.0
             if new_width < min_res:
@@ -255,7 +255,7 @@ class ConstrainResolution(io.ComfyNode):
         image: torch.Tensor,
         target_width: int,
         target_height: int,
-        position: CropPosition
+        position: str
     ) -> torch.Tensor:
         """
         Crop image to exact target dimensions from specified position.
@@ -280,19 +280,19 @@ class ConstrainResolution(io.ComfyNode):
             return image
 
         # Calculate crop coordinates based on position
-        if position == CropPosition.CENTER:
+        if position == CropPosition.CENTER.value:
             left = width_diff // 2
             top = height_diff // 2
-        elif position == CropPosition.TOP:
+        elif position == CropPosition.TOP.value:
             left = width_diff // 2
             top = 0
-        elif position == CropPosition.BOTTOM:
+        elif position == CropPosition.BOTTOM.value:
             left = width_diff // 2
             top = height_diff
-        elif position == CropPosition.LEFT:
+        elif position == CropPosition.LEFT.value:
             left = 0
             top = height_diff // 2
-        elif position == CropPosition.RIGHT:
+        elif position == CropPosition.RIGHT.value:
             left = width_diff
             top = height_diff // 2
         else:
