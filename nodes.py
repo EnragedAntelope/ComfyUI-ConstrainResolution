@@ -79,10 +79,10 @@ class ConstrainResolution(io.ComfyNode):
                 ),
 
                 # Constraint behavior
-                io.String.Input(
+                io.Input(
                     "constraint_mode",
+                    [e.value for e in ConstraintMode], # Correct way to define a combo box
                     default=ConstraintMode.MIN_RES.value,
-                    display=f"combo[{', '.join([e.value for e in ConstraintMode])}]",
                     tooltip=(
                         "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
                         "• Prioritize Min Resolution: Ensures neither dimension falls below min_res (may exceed max_res)\n"
@@ -99,10 +99,10 @@ class ConstrainResolution(io.ComfyNode):
                         "Disable if preserving the entire image is more important than exact dimensions."
                     )
                 ),
-                io.String.Input(
+                io.Input(
                     "crop_position",
+                    [e.value for e in CropPosition], # Correct way to define a combo box
                     default=CropPosition.CENTER.value,
-                    display=f"combo[{', '.join([e.value for e in CropPosition])}]",
                     tooltip=(
                         "Where to crop from when 'Crop as Required' is enabled.\n"
                         "• center: Crop equally from all sides\n"
