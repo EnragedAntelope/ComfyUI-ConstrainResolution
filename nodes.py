@@ -79,9 +79,9 @@ class ConstrainResolution(io.ComfyNode):
                 ),
 
                 # Constraint behavior
-                io.Input(
+                io.Combo.Input(
                     "constraint_mode",
-                    [e.value for e in ConstraintMode], # Correct way to define a combo box
+                    options=[e.value for e in ConstraintMode],
                     default=ConstraintMode.MIN_RES.value,
                     tooltip=(
                         "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
@@ -99,9 +99,9 @@ class ConstrainResolution(io.ComfyNode):
                         "Disable if preserving the entire image is more important than exact dimensions."
                     )
                 ),
-                io.Input(
+                io.Combo.Input(
                     "crop_position",
-                    [e.value for e in CropPosition], # Correct way to define a combo box
+                    options=[e.value for e in CropPosition],
                     default=CropPosition.CENTER.value,
                     tooltip=(
                         "Where to crop from when 'Crop as Required' is enabled.\n"
@@ -115,27 +115,27 @@ class ConstrainResolution(io.ComfyNode):
             ],
             outputs=[
                 io.Image.Output(
-                    "resized_image",
+                    display_name="resized_image",
                     tooltip="Image resized to the constrained dimensions"
                 ),
                 io.Image.Output(
-                    "original_image",
+                    display_name="original_image",
                     tooltip="Original image passed through unchanged for workflow flexibility"
                 ),
                 io.Int.Output(
-                    "width",
+                    display_name="width",
                     tooltip="Final width after constraints and rounding"
                 ),
                 io.Int.Output(
-                    "height",
+                    display_name="height",
                     tooltip="Final height after constraints and rounding"
                 ),
                 io.Float.Output(
-                    "final_aspect_ratio",
+                    display_name="final_aspect_ratio",
                     tooltip="Aspect ratio of the output image (width/height)"
                 ),
                 io.Float.Output(
-                    "original_aspect_ratio",
+                    display_name="original_aspect_ratio",
                     tooltip="Aspect ratio of the input image for comparison"
                 ),
             ],
