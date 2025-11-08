@@ -1,71 +1,193 @@
 # ComfyUI Constrain Resolution Node
 
-A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that analyzes images and suggests optimal dimensions while preserving aspect ratio. This node is particularly useful in image-to-image and image-to-video workflows where maintaining aspect ratios and resolution constraints is crucial.
+A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that intelligently resizes images to optimal dimensions while preserving aspect ratio. This node is essential for image-to-image and image-to-video workflows where strict resolution constraints and dimension requirements must be met.
 
 <img width="1496" height="911" alt="image" src="https://github.com/user-attachments/assets/601d71de-bafb-4dc1-ab9b-7022f13b7577" />
 
-
 ## Features
 
--   Analyzes input images and suggests optimal dimensions.
--   Preserves aspect ratio while fitting within minimum and maximum resolution constraints.
--   Ensures dimensions are multiples of a specified number (e.g., 8 for SDXL).
--   Handles both landscape and portrait orientations.
--   **Optional priority setting** to choose between strictly enforcing maximum resolution or ensuring minimum resolution is always met.
--   Passes through the original image unmodified for chaining with other nodes.
--   Provides both constrained dimensions and aspect ratio information.
+- **Intelligent Image Resizing**: Automatically resizes images using high-quality bilinear interpolation
+- **Aspect Ratio Preservation**: Maintains original aspect ratio through smart cropping when needed
+- **Flexible Constraint Modes**: Choose between prioritizing minimum resolution or strictly enforcing maximum limits
+- **Multiple Alignment**: Ensures dimensions are multiples of specified values (e.g., 8 for SDXL, 16/32/64 for performance)
+- **Smart Cropping**: Optional cropping with configurable position (center, top, bottom, left, right)
+- **Dual Outputs**: Provides both resized and original images for workflow flexibility
+- **Comprehensive Validation**: Input validation prevents invalid configurations
+- **Detailed Metrics**: Outputs width, height, and aspect ratio information for analysis
+
+## Why Use This Node?
+
+Many AI models have strict dimension requirements:
+- **Image-to-Video models** often require exact resolutions (e.g., 1024x576, 768x768)
+- **SDXL** works best with dimensions divisible by 8
+- **Some models** require dimensions divisible by 16, 32, or 64 for optimal performance
+- **VRAM constraints** may require strict maximum resolution limits
+
+This node handles all these requirements intelligently, ensuring your images are always compatible with downstream processes.
 
 ## Inputs
 
--   **Image**: The input image to analyze (required).
--   **Constraint Mode**: Choose how to handle conflicting constraints for extreme aspect ratios.
-    -   **Prioritize Min Resolution (Default)**: Ensures that neither dimension will be smaller than `min_res`. This is the recommended mode for most workflows, as it prevents generating images that are too small. In cases of extreme aspect ratios, this may cause the longer dimension to exceed `max_res`.
-    -   **Prioritize Max Resolution (Strict)**: Strictly enforces the `max_res` limit on both dimensions. This guarantees the output will fit within a `max_res` x `max_res` bounding box, which is useful for strict VRAM limits. In cases of extreme aspect ratios, this may cause the shorter dimension to fall below `min_res`.
--   **Min Resolution**: Minimum resolution in pixels for either width or height.
--   **Max Resolution**: Maximum resolution in pixels for either width or height.
--   **Multiple Of**: Ensure dimensions are multiples of this number (e.g., 8 for SD-XL).
+### Image Input
+- **image**: The input image to analyze and resize (required)
+
+### Resolution Constraints
+- **min_res** (default: 704, range: 1-65536): Minimum resolution in pixels for both width and height. Images with any dimension smaller than this will be upscaled to meet the requirement.
+- **max_res** (default: 1280, range: 1-65536): Maximum resolution in pixels for both width and height. Images with any dimension larger than this will be downscaled.
+- **multiple_of** (default: 8, range: 1-256): Ensures output dimensions are multiples of this number. Common values:
+  - `8` - Standard for SDXL and most Stable Diffusion models
+  - `16` - Some models with stricter alignment requirements
+  - `32` or `64` - Optimal for certain architectures and performance
+  - `1` - Disable rounding (use exact calculated dimensions)
+
+### Constraint Behavior
+- **constraint_mode** (default: "Prioritize Min Resolution"): How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max constraints.
+  - **Prioritize Min Resolution**: Ensures neither dimension falls below `min_res`. For extreme aspect ratios, this may cause the longer dimension to exceed `max_res`. Recommended for most workflows to prevent images that are too small.
+  - **Prioritize Max Resolution (Strict)**: Strictly enforces the `max_res` limit on both dimensions, guaranteeing output fits within a `max_res × max_res` bounding box. For extreme aspect ratios, the shorter dimension may fall below `min_res`. Useful for strict VRAM limits.
+
+### Crop Options
+- **crop_as_required** (default: **True**): Enable cropping to achieve exact target dimensions when rounding to multiples causes aspect ratio changes.
+  - **Enabled** (recommended): Preserves aspect ratio perfectly by cropping minimal amounts. Output is immediately compatible with strict dimension requirements.
+  - **Disabled**: Preserves entire image but may slightly distort aspect ratio due to rounding.
+
+- **crop_position** (default: "center"): Where to crop from when `crop_as_required` is enabled. Only applies when cropping is active.
+  - **center**: Crop equally from all sides (default, works for most cases)
+  - **top**: Keep top portion, crop from bottom (useful for portraits, headshots)
+  - **bottom**: Keep bottom portion, crop from top (useful for product shots on surfaces)
+  - **left**: Keep left portion, crop from right (useful for documents, reading order)
+  - **right**: Keep right portion, crop from left (useful for RTL content)
 
 ## Outputs
 
--   **Image**: The unchanged input image (passed through).
--   **Constrained Width**: Suggested width that fits the constraints.
--   **Constrained Height**: Suggested height that fits the constraints.
--   **Constrained Aspect Ratio**: The aspect ratio of the constrained dimensions.
--   **Original Aspect Ratio**: The original aspect ratio of the input image.
+The node provides six outputs for maximum workflow flexibility:
+
+1. **resized_image**: The final image resized and optionally cropped to meet all constraints. This is your primary output for use in downstream nodes.
+2. **original_image**: The input image passed through unchanged. Useful for comparison or parallel workflows.
+3. **width**: Final output width in pixels after all constraints and rounding.
+4. **height**: Final output height in pixels after all constraints and rounding.
+5. **final_aspect_ratio**: Aspect ratio of the output image (width/height), rounded to 4 decimal places.
+6. **original_aspect_ratio**: Aspect ratio of the input image for comparison.
 
 ## Usage
 
 ### Basic Workflow
 
-1.  Connect your image source to the `Image` input.
-2.  Select your desired `Constraint Mode`. For most uses, the default is ideal.
-3.  Set your desired `Min Resolution` and `Max Resolution` constraints.
-4.  Set the `Multiple Of` value based on your model requirements (e.g., 8 for SDXL).
-5.  Connect the `Image` output to your preferred resize node (e.g., Image Resize).
-6.  Use the `Constrained Width` and `Constrained Height` outputs to set the dimensions in your resize node.
+1. Add the **Constrain Resolution** node to your workflow
+2. Connect your image source to the `image` input
+3. Set your desired `min_res` and `max_res` constraints
+4. Set `multiple_of` based on your model requirements (8 for SDXL, 16/32/64 for others)
+5. Choose your `constraint_mode` (keep default for most cases)
+6. Keep `crop_as_required` enabled for exact dimensions (recommended)
+7. Connect the `resized_image` output to your next node (resize node, image-to-video, etc.)
 
-Example:
+Example workflow:
 ![image](https://github.com/user-attachments/assets/36dd312c-4a65-44ce-aead-fb7cbe65c72c)
 
 ### Common Use Cases
 
--   **Image-to-Image**: Ensure consistent image sizes while maintaining aspect ratios.
--   **Image-to-Video**: Prepare frames with proper dimensions for video generation.
--   **Batch Processing**: Standardize image dimensions across multiple images.
--   **Resolution Optimization**: Find optimal dimensions for specific model requirements.
--   **VRAM Management**: Use "Prioritize Max Resolution" mode to avoid exceeding VRAM limits with unusually large images.
+#### Image-to-Video Workflows
+```
+Load Image → Constrain Resolution → Image-to-Video Model
+Settings: min_res=768, max_res=1024, multiple_of=8, crop_as_required=True
+```
+Ensures images meet exact dimension requirements for video generation models.
+
+#### SDXL Image-to-Image
+```
+Load Image → Constrain Resolution → SDXL Upscale/I2I
+Settings: min_res=704, max_res=1280, multiple_of=8, constraint_mode="Prioritize Min Resolution"
+```
+Optimizes images for SDXL processing while maintaining quality.
+
+#### Batch Processing with VRAM Limits
+```
+Load Images (Batch) → Constrain Resolution → Model Processing
+Settings: max_res=1024, constraint_mode="Prioritize Max Resolution (Strict)", crop_as_required=True
+```
+Ensures no image exceeds VRAM capacity while processing batches.
+
+#### Portrait Cropping for Headshots
+```
+Load Image → Constrain Resolution → Output
+Settings: min_res=512, max_res=768, crop_as_required=True, crop_position="top"
+```
+Intelligently crops portraits to keep faces (typically in upper portion).
+
+### Advanced Tips
+
+- **Extreme Aspect Ratios**: For very wide or very tall images (e.g., panoramas, screenshots), use "Prioritize Max Resolution (Strict)" to prevent excessive upscaling on one dimension.
+
+- **Preserving Every Pixel**: If you absolutely need to keep the entire image without cropping, set `crop_as_required=False` and `multiple_of=1`. Note that this may produce dimensions that aren't optimal for all models.
+
+- **Quality vs. Speed**: Higher `multiple_of` values (32, 64) can improve processing speed in some models but may crop more aggressively. Test to find the sweet spot for your workflow.
+
+- **Aspect Ratio Monitoring**: Use the `final_aspect_ratio` and `original_aspect_ratio` outputs to monitor how much the aspect ratio changed. Connect these to display nodes to track during batch processing.
+
+## Technical Details
+
+### Resizing Algorithm
+- Uses PyTorch's `F.interpolate` with bilinear interpolation and `align_corners=False`
+- Maintains proper tensor shape handling: `[batch, height, width, channels]`
+- High-quality resizing suitable for AI model inputs
+
+### Cropping Algorithm
+When `crop_as_required` is enabled:
+1. Image is first resized to preserve aspect ratio on the larger dimension
+2. Minimal cropping is applied to achieve exact target dimensions
+3. Crop position determines which portion of the image is preserved
+4. This approach maximizes quality by minimizing information loss
+
+### Input Validation
+The node validates:
+- `max_res` must be ≥ `min_res`
+- `min_res` must be ≥ 1
+- `multiple_of` must be ≥ 1
+- All values must be within reasonable bounds (up to 65536 for resolutions)
 
 ## Installation
 
-Use [ComfyUI Manager](https://github.com/ltdrdata/ComfyUI-Manager) or follow these manual installation steps:
+### Using ComfyUI Manager (Recommended)
+1. Open ComfyUI Manager
+2. Search for "Constrain Resolution"
+3. Click Install
+4. Restart ComfyUI
 
-1.  Navigate to your `ComfyUI/custom_nodes/` directory.
-2.  Clone this repository:
-    ```bash
-    git clone https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution.git
-    ```
-3.  Restart ComfyUI.
+### Manual Installation
+1. Navigate to your `ComfyUI/custom_nodes/` directory
+2. Clone this repository:
+   ```bash
+   git clone https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution.git
+   ```
+3. Restart ComfyUI
+
+The node will automatically install its dependencies (`numpy`, `comfy_api`).
+
+## ComfyUI v3 Compatibility
+
+This node is built using the **ComfyUI v3 specification** with the following modern features:
+- Uses `comfy_api.latest` for future-proof compatibility
+- Object-oriented schema with `io.ComfyNode` base class
+- Type-safe inputs and outputs with comprehensive tooltips
+- Stateless execution model with classmethod-based `execute()`
+- Input validation with `validate_inputs()`
+- Fully async-compatible entry point
+
+## Version History
+
+- **v2.1.0**: Added image resizing, intelligent cropping, crop position control, comprehensive tooltips, input validation, and 65k resolution support
+- **v2.0.0**: Migrated to ComfyUI v3 specification
+- **v1.1**: Initial release with resolution analysis and constraint calculation
 
 ## License
 
 See the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Issues and pull requests are welcome! Please ensure any changes maintain compatibility with ComfyUI v3 specification.
+
+## Support
+
+If you encounter issues or have questions:
+- Open an issue on [GitHub](https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution/issues)
+- Check existing issues for solutions
+- Provide example images and settings when reporting problems

@@ -35,7 +35,7 @@ class ConstrainResolution(io.ComfyNode):
                 "• Use 'Prioritize Min Resolution' to ensure images are never too small (may exceed max on one dimension)\n"
                 "• Use 'Prioritize Max Resolution (Strict)' for hard VRAM limits (may go below min on one dimension)\n"
                 "• Set 'Multiple Of' to 8 for SDXL, 16 for some models, or 64 for optimal performance\n"
-                "• Enable 'Crop as Required' when you need exact dimensions and aspect ratio preservation isn't critical\n"
+                "• 'Crop as Required' is enabled by default for immediate compatibility with strict dimension requirements\n"
                 "• The node outputs both the resized image and the original for workflow flexibility"
             ),
             inputs=[
@@ -50,14 +50,14 @@ class ConstrainResolution(io.ComfyNode):
                     "min_res",
                     default=704,
                     min=1,
-                    max=16384,
+                    max=65536,
                     tooltip="Minimum resolution in pixels for width and height. Images smaller than this will be upscaled."
                 ),
                 io.Int.Input(
                     "max_res",
                     default=1280,
                     min=1,
-                    max=16384,
+                    max=65536,
                     tooltip="Maximum resolution in pixels for width and height. Images larger than this will be downscaled."
                 ),
                 io.Int.Input(
@@ -86,7 +86,7 @@ class ConstrainResolution(io.ComfyNode):
                 # Crop options
                 io.Boolean.Input(
                     "crop_as_required",
-                    default=False,
+                    default=True,
                     tooltip=(
                         "Enable cropping to achieve exact target dimensions when rounding causes aspect ratio changes. "
                         "Disable if preserving the entire image is more important than exact dimensions."
