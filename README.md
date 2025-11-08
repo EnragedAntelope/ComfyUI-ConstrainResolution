@@ -159,7 +159,7 @@ The node validates:
    ```
 3. Restart ComfyUI
 
-The node will automatically install its dependencies (`numpy`, `comfy_api`).
+The node will automatically install its dependencies (`numpy`).
 
 ## ComfyUI v3 Compatibility
 
