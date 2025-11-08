@@ -1,2 +1,1 @@
 numpy
-comfy_api
