@@ -1,9 +1,9 @@
 [project]
 name = "constrainresolution"
 description = "Given min/max resolution constraints, this automatically suggests optimal dimensions while preserving aspect ratio. Ideal for Image to Image (I2I) and Image to Video (I2V) workflows!"
-version = "2.1.02"
+version = "2.1.03"
 license = {file = "LICENSE"}
-dependencies = ["numpy", "comfy_api"]
+dependencies = ["numpy"]
 
 [project.urls]
 Repository = "https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution"
@@ -13,5 +13,6 @@ Repository = "https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution"
 PublisherId = "enragedantelope"
 DisplayName = "ComfyUI-ConstrainResolution"
 Icon = ""
+
 
 
