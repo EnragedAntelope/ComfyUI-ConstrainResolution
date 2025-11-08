@@ -79,9 +79,9 @@ class ConstrainResolution(io.ComfyNode):
                 ),
 
                 # Constraint behavior
-                io.Enum.Input(
-                    ConstraintMode,
+                io.Input(
                     "constraint_mode",
+                    ConstraintMode,
                     default=ConstraintMode.MIN_RES,
                     tooltip=(
                         "How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max.\n"
@@ -99,9 +99,9 @@ class ConstrainResolution(io.ComfyNode):
                         "Disable if preserving the entire image is more important than exact dimensions."
                     )
                 ),
-                io.Enum.Input(
-                    CropPosition,
+                io.Input(
                     "crop_position",
+                    CropPosition,
                     default=CropPosition.CENTER,
                     tooltip=(
                         "Where to crop from when 'Crop as Required' is enabled.\n"
@@ -179,7 +179,7 @@ class ConstrainResolution(io.ComfyNode):
         min_res: int,
         max_res: int,
         multiple_of: int,
-        constraint_mode: str
+        constraint_mode: ConstraintMode
     ) -> Tuple[int, int]:
         """Calculate optimal dimensions based on constraints"""
         if height == 0 or width == 0:
@@ -255,7 +255,7 @@ class ConstrainResolution(io.ComfyNode):
         image: torch.Tensor,
         target_width: int,
         target_height: int,
-        position: str
+        position: CropPosition
     ) -> torch.Tensor:
         """
         Crop image to exact target dimensions from specified position.
@@ -280,19 +280,19 @@ class ConstrainResolution(io.ComfyNode):
             return image
 
         # Calculate crop coordinates based on position
-        if position == "center":
+        if position == CropPosition.CENTER:
             left = width_diff // 2
             top = height_diff // 2
-        elif position == "top":
+        elif position == CropPosition.TOP:
             left = width_diff // 2
             top = 0
-        elif position == "bottom":
+        elif position == CropPosition.BOTTOM:
             left = width_diff // 2
             top = height_diff
-        elif position == "left":
+        elif position == CropPosition.LEFT:
             left = 0
             top = height_diff // 2
-        elif position == "right":
+        elif position == CropPosition.RIGHT:
             left = width_diff
             top = height_diff // 2
         else:
