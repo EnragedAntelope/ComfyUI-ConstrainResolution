@@ -2,7 +2,8 @@
 
 A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that intelligently resizes images to optimal dimensions while preserving aspect ratio. This node is essential for image-to-image and image-to-video workflows where strict resolution constraints and dimension requirements must be met.
 
-<img width="1496" height="911" alt="image" src="https://github.com/user-attachments/assets/601d71de-bafb-4dc1-ab9b-7022f13b7577" />
+<img width="950" height="1091" alt="image" src="https://github.com/user-attachments/assets/41ed00b9-954b-4e0b-a5f4-1e7556493e24" />
+
 
 ## Features
 
