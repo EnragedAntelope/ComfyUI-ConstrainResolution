@@ -40,7 +40,7 @@ class ConstrainResolution(io.ComfyNode):
                 "💡 USAGE TIPS:\n"
                 "• Use 'Prioritize Min Resolution' to ensure images are never too small (may exceed max on one dimension)\n"
                 "• Use 'Prioritize Max Resolution (Strict)' for hard VRAM limits (may go below min on one dimension)\n"
-                "• Set 'Multiple Of' to 8 for SDXL, 16 for some models, or 64 for optimal performance\n"
+                "• Set 'Multiple Of' to 2 for most models, or higher values (8, 16, 32, 64) for optimal performance\n"
                 "• 'Crop as Required' is enabled by default for immediate compatibility with strict dimension requirements\n"
                 "• The node outputs both the resized image and the original for workflow flexibility"
             ),
@@ -68,12 +68,12 @@ class ConstrainResolution(io.ComfyNode):
                 ),
                 io.Int.Input(
                     "multiple_of",
-                    default=8,
+                    default=2,
                     min=1,
                     max=256,
                     tooltip=(
                         "Ensures output dimensions are multiples of this number. "
-                        "Common values: 8 (SDXL), 16 (some models), 32 or 64 (optimal performance). "
+                        "Common values: 2 (most models), 8, 16, 32, or 64 (optimal performance). "
                         "Set to 1 to disable rounding."
                     )
                 ),
@@ -349,20 +349,22 @@ class ConstrainResolution(io.ComfyNode):
             aspect_ratio_deviation = abs((final_aspect_ratio - original_aspect_ratio) / original_aspect_ratio * 100)
 
             if aspect_ratio_deviation > 0.1:  # If more than 0.1% deviation
-                # Resize to the dimension that needs to be larger, then crop
+                # Resize to preserve aspect ratio, making one dimension larger than target, then crop
                 if width / height > target_width / target_height:
-                    # Original is wider, resize based on width and crop height
-                    intermediate_height = int(target_width / (width / height))
-                    resized_image = cls.resize_image(image, target_width, intermediate_height)
-                else:
-                    # Original is taller, resize based on height and crop width
+                    # Original is wider (more landscape), resize based on height and crop width
+                    # This ensures height matches target, width will be larger and cropped
                     intermediate_width = int(target_height * (width / height))
                     resized_image = cls.resize_image(image, intermediate_width, target_height)
+                else:
+                    # Original is taller (more portrait), resize based on width and crop height
+                    # This ensures width matches target, height will be larger and cropped
+                    intermediate_height = int(target_width / (width / height))
+                    resized_image = cls.resize_image(image, target_width, intermediate_height)
 
                 # Crop to exact target dimensions
                 resized_image = cls.crop_image(resized_image, target_width, target_height, crop_position)
 
-                print(f"Image cropped from center to achieve exact dimensions {target_width}x{target_height}")
+                print(f"Image cropped to achieve exact dimensions {target_width}x{target_height}")
 
         # Log aspect ratio deviation warning if significant
         if original_aspect_ratio > 0 and not crop_as_required:

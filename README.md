@@ -9,7 +9,7 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that intelligently r
 - **Intelligent Image Resizing**: Automatically resizes images using high-quality bilinear interpolation
 - **Aspect Ratio Preservation**: Maintains original aspect ratio through smart cropping when needed
 - **Flexible Constraint Modes**: Choose between prioritizing minimum resolution or strictly enforcing maximum limits
-- **Multiple Alignment**: Ensures dimensions are multiples of specified values (e.g., 8 for SDXL, 16/32/64 for performance)
+- **Multiple Alignment**: Ensures dimensions are multiples of specified values (e.g., 2, 8, 16, 32, 64 for performance)
 - **Smart Cropping**: Optional cropping with configurable position (center, top, bottom, left, right)
 - **Dual Outputs**: Provides both resized and original images for workflow flexibility
 - **Comprehensive Validation**: Input validation prevents invalid configurations
@@ -19,7 +19,7 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that intelligently r
 
 Many AI models have strict dimension requirements:
 - **Image-to-Video models** often require exact resolutions (e.g., 1024x576, 768x768)
-- **SDXL** works best with dimensions divisible by 8
+- **Modern diffusion models** (Flux, Stable Diffusion, etc.) typically work best with dimensions divisible by 2, 8, or higher
 - **Some models** require dimensions divisible by 16, 32, or 64 for optimal performance
 - **VRAM constraints** may require strict maximum resolution limits
 
@@ -33,9 +33,9 @@ This node handles all these requirements intelligently, ensuring your images are
 ### Resolution Constraints
 - **min_res** (default: 704, range: 1-65536): Minimum resolution in pixels for both width and height. Images with any dimension smaller than this will be upscaled to meet the requirement.
 - **max_res** (default: 1280, range: 1-65536): Maximum resolution in pixels for both width and height. Images with any dimension larger than this will be downscaled.
-- **multiple_of** (default: 8, range: 1-256): Ensures output dimensions are multiples of this number. Common values:
-  - `8` - Standard for SDXL and most Stable Diffusion models
-  - `16` - Some models with stricter alignment requirements
+- **multiple_of** (default: 2, range: 1-256): Ensures output dimensions are multiples of this number. Common values:
+  - `2` - Standard for most diffusion models (Flux, Stable Diffusion, etc.)
+  - `8` or `16` - Some models with stricter alignment requirements
   - `32` or `64` - Optimal for certain architectures and performance
   - `1` - Disable rounding (use exact calculated dimensions)
 
@@ -74,7 +74,7 @@ The node provides six outputs for maximum workflow flexibility:
 1. Add the **Constrain Resolution** node to your workflow
 2. Connect your image source to the `image` input
 3. Set your desired `min_res` and `max_res` constraints
-4. Set `multiple_of` based on your model requirements (8 for SDXL, 16/32/64 for others)
+4. Set `multiple_of` based on your model requirements (2 for most models, 8/16/32/64 for specific architectures)
 5. Choose your `constraint_mode` (keep default for most cases)
 6. Keep `crop_as_required` enabled for exact dimensions (recommended)
 7. Connect the `resized_image` output to your next node (resize node, image-to-video, etc.)
@@ -91,12 +91,12 @@ Settings: min_res=768, max_res=1024, multiple_of=8, crop_as_required=True
 ```
 Ensures images meet exact dimension requirements for video generation models.
 
-#### SDXL Image-to-Image
+#### Diffusion Model Image-to-Image
 ```
-Load Image → Constrain Resolution → SDXL Upscale/I2I
-Settings: min_res=704, max_res=1280, multiple_of=8, constraint_mode="Prioritize Min Resolution"
+Load Image → Constrain Resolution → Model Upscale/I2I
+Settings: min_res=704, max_res=1280, multiple_of=2, constraint_mode="Prioritize Min Resolution"
 ```
-Optimizes images for SDXL processing while maintaining quality.
+Optimizes images for diffusion model processing while maintaining quality.
 
 #### Batch Processing with VRAM Limits
 ```
