@@ -1,3 +1,5 @@
-from .nodes import comfy_entrypoint
-
-__all__ = ['comfy_entrypoint']
+try:
+    from .nodes import comfy_entrypoint
+    __all__ = ['comfy_entrypoint']
+except (ImportError, SystemError):
+    pass

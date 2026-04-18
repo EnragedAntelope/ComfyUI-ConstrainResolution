@@ -208,12 +208,19 @@ class ConstrainResolution(io.ComfyNode):
             new_height *= scale_factor
 
         # If mode is "Prioritize Max Resolution (Strict)", we do nothing here.
-        # The initial scaling already guarantees we are within the max_res bounds,
-        # and we accept that a dimension may fall below min_res.
+        # The initial scaling keeps us within max_res before rounding, but rounding
+        # can push a dimension above max_res — the clamp below handles that.
 
         # 3. Round final dimensions to the nearest multiple
         final_width = ConstrainResolution.round_to_multiple(int(new_width), multiple_of)
         final_height = ConstrainResolution.round_to_multiple(int(new_height), multiple_of)
+
+        # 4. In strict mode, rounding can exceed max_res (e.g. round_to_multiple(2160, 32) = 2176).
+        #    Clamp to the largest valid multiple of multiple_of that is <= max_res.
+        if constraint_mode == ConstraintMode.MAX_RES_STRICT.value:
+            max_allowed = (max_res // multiple_of) * multiple_of
+            final_width = min(final_width, max_allowed)
+            final_height = min(final_height, max_allowed)
 
         return final_width, final_height
 
