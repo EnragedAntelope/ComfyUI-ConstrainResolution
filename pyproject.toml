@@ -1,7 +1,7 @@
 [project]
 name = "constrainresolution"
-description = "Given min/max resolution constraints, this automatically suggests optimal dimensions while preserving aspect ratio. Ideal for Image to Image (I2I) and Image to Video (I2V) workflows!"
-version = "2.3.0"
+description = "Resize images to fit min/max resolution limits with dimensions guaranteed divisible by 2/8/16/32/64. Aspect-ratio-preserving resize with smart cropping — ideal for image-to-image and image-to-video workflows."
+version = "2.3.1"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = []

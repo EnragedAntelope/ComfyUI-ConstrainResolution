@@ -1,203 +1,83 @@
-# ComfyUI Constrain Resolution Node
+# ComfyUI Constrain Resolution
 
-A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that intelligently resizes images to optimal dimensions while preserving aspect ratio. This node is essential for image-to-image and image-to-video workflows where strict resolution constraints and dimension requirements must be met.
+A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that resizes any image to fit your model's resolution rules: a minimum size, a maximum size, and dimensions guaranteed divisible by 2, 8, 16, 32, or 64. It keeps the aspect ratio by cropping a few pixels when needed, so the output is always exactly what strict image-to-image and image-to-video models expect.
 
-<img width="950" height="1091" alt="image" src="https://github.com/user-attachments/assets/41ed00b9-954b-4e0b-a5f4-1e7556493e24" />
+![Example workflow: 1800×1013 input resized to 1280×720](docs/images/workflow.png)
 
+In the example above, an 1800×1013 image becomes 1280×720 — within the 704–1280 limits, both dimensions divisible by 16, aspect ratio intact.
 
-## Features
+## Why
 
-- **Intelligent Image Resizing**: Automatically resizes images with your choice of interpolation (lanczos, bicubic, bilinear, nearest-exact, area)
-- **Aspect Ratio Preservation**: Maintains original aspect ratio through smart cropping when needed
-- **Flexible Constraint Modes**: Choose between prioritizing minimum resolution or strictly enforcing maximum limits
-- **Multiple Alignment**: Ensures dimensions are multiples of specified values (e.g., 2, 8, 16, 32, 64 for performance)
-- **Smart Cropping**: Optional cropping with configurable position (center, top, bottom, left, right)
-- **Dual Outputs**: Provides both resized and original images for workflow flexibility
-- **Comprehensive Validation**: Input validation prevents invalid configurations
-- **Detailed Metrics**: Outputs width, height, and aspect ratio information for analysis
+Many models fail or degrade when dimensions are wrong:
 
-## Why Use This Node?
+- Image-to-video models often require exact sizes with dimensions divisible by 8 or 16
+- Diffusion models (Flux, SD, etc.) need dimensions divisible by at least 2, and some run faster at 32/64 alignment
+- VRAM limits mean you need a hard cap on resolution
 
-Many AI models have strict dimension requirements:
-- **Image-to-Video models** often require exact resolutions (e.g., 1024x576, 768x768)
-- **Modern diffusion models** (Flux, Stable Diffusion, etc.) typically work best with dimensions divisible by 2, 8, or higher
-- **Some models** require dimensions divisible by 16, 32, or 64 for optimal performance
-- **VRAM constraints** may require strict maximum resolution limits
-
-This node handles all these requirements intelligently, ensuring your images are always compatible with downstream processes.
+This node applies all three rules in one step and **guarantees divisibility on every output** — resize, round, and crop all land on multiples of your chosen number.
 
 ## Inputs
 
-### Image Input
-- **image**: The input image to analyze and resize (required)
+![Constrain Resolution node](docs/images/node.png)
 
-### Resolution Constraints
-- **min_res** (default: 704, range: 1-65536): Minimum resolution in pixels for both width and height. Images with any dimension smaller than this will be upscaled to meet the requirement.
-- **max_res** (default: 1280, range: 1-65536): Maximum resolution in pixels for both width and height. Images with any dimension larger than this will be downscaled.
-- **multiple_of** (default: 2, range: 1-256): Ensures output dimensions are multiples of this number. Common values:
-  - `2` - Standard for most diffusion models (Flux, Stable Diffusion, etc.)
-  - `8` or `16` - Some models with stricter alignment requirements
-  - `32` or `64` - Optimal for certain architectures and performance
-  - `1` - Disable rounding (use exact calculated dimensions)
-- **resize_method** (default: "lanczos"): Interpolation method used when resizing.
-  - `lanczos` - Sharpest results, best overall quality (default)
-  - `bicubic` - High quality, slightly softer than lanczos
-  - `bilinear` - Fast, slightly soft
-  - `nearest-exact` - No interpolation; best for pixel art and masks
-  - `area` - Good for large downscales
+| Input | Default | Purpose |
+|---|---|---|
+| `image` | — | Image (or batch) to resize |
+| `min_res` | 704 | Neither dimension will end up below this |
+| `max_res` | 1280 | Neither dimension will end up above this |
+| `multiple_of` | 2 | Output width and height are always divisible by this (1 disables) |
+| `resize_method` | lanczos | Interpolation: `lanczos` (sharpest), `bicubic`, `bilinear`, `nearest-exact` (pixel art/masks), `area` (big downscales) |
+| `constraint_mode` | Prioritize Min Resolution | What wins when an extreme aspect ratio can't satisfy both limits (see below) |
+| `crop_as_required` | True | Crop minimally to hit exact dimensions instead of distorting the aspect ratio |
+| `crop_position` | center | Which part to keep when cropping: center / top / bottom / left / right |
 
-### Constraint Behavior
-- **constraint_mode** (default: "Prioritize Min Resolution"): How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max constraints.
-  - **Prioritize Min Resolution**: Ensures neither dimension falls below `min_res`. For extreme aspect ratios, this may cause the longer dimension to exceed `max_res`. Recommended for most workflows to prevent images that are too small.
-  - **Prioritize Max Resolution (Strict)**: Strictly enforces the `max_res` limit on both dimensions, guaranteeing output fits within a `max_res × max_res` bounding box. For extreme aspect ratios, the shorter dimension may fall below `min_res`. Useful for strict VRAM limits.
+**Constraint modes** — with a very wide or very tall image, min and max can conflict:
 
-### Crop Options
-- **crop_as_required** (default: **True**): Enable cropping to achieve exact target dimensions when rounding to multiples causes aspect ratio changes.
-  - **Enabled** (recommended): Preserves aspect ratio perfectly by cropping minimal amounts. Output is immediately compatible with strict dimension requirements.
-  - **Disabled**: Preserves entire image but may slightly distort aspect ratio due to rounding.
-
-- **crop_position** (default: "center"): Where to crop from when `crop_as_required` is enabled. Only applies when cropping is active.
-  - **center**: Crop equally from all sides (default, works for most cases)
-  - **top**: Keep top portion, crop from bottom (useful for portraits, headshots)
-  - **bottom**: Keep bottom portion, crop from top (useful for product shots on surfaces)
-  - **left**: Keep left portion, crop from right (useful for documents, reading order)
-  - **right**: Keep right portion, crop from left (useful for RTL content)
+- **Prioritize Min Resolution**: neither dimension goes below `min_res`, even if the long side must exceed `max_res`. Best default.
+- **Prioritize Max Resolution (Strict)**: output always fits in a `max_res × max_res` box (hard VRAM cap), even if the short side lands below `min_res`.
 
 ## Outputs
 
-The node provides six outputs for maximum workflow flexibility:
+| Output | Description |
+|---|---|
+| `resized_image` | The constrained image — your main output |
+| `original_image` | Untouched input passthrough |
+| `width`, `height` | Final dimensions (handy for downstream nodes) |
+| `final_aspect_ratio`, `original_aspect_ratio` | For monitoring how much the ratio changed |
 
-1. **resized_image**: The final image resized and optionally cropped to meet all constraints. This is your primary output for use in downstream nodes.
-2. **original_image**: The input image passed through unchanged. Useful for comparison or parallel workflows.
-3. **width**: Final output width in pixels after all constraints and rounding.
-4. **height**: Final output height in pixels after all constraints and rounding.
-5. **final_aspect_ratio**: Aspect ratio of the output image (width/height), rounded to 4 decimal places.
-6. **original_aspect_ratio**: Aspect ratio of the input image for comparison.
+## Quick recipes
 
-## Usage
-
-### Basic Workflow
-
-1. Add the **Constrain Resolution** node to your workflow
-2. Connect your image source to the `image` input
-3. Set your desired `min_res` and `max_res` constraints
-4. Set `multiple_of` based on your model requirements (2 for most models, 8/16/32/64 for specific architectures)
-5. Choose your `constraint_mode` (keep default for most cases)
-6. Keep `crop_as_required` enabled for exact dimensions (recommended)
-7. Connect the `resized_image` output to your next node (resize node, image-to-video, etc.)
-
-Example workflow:
-![image](https://github.com/user-attachments/assets/36dd312c-4a65-44ce-aead-fb7cbe65c72c)
-
-### Common Use Cases
-
-#### Image-to-Video Workflows
-```
-Load Image → Constrain Resolution → Image-to-Video Model
-Settings: min_res=768, max_res=1024, multiple_of=8, crop_as_required=True
-```
-Ensures images meet exact dimension requirements for video generation models.
-
-#### Diffusion Model Image-to-Image
-```
-Load Image → Constrain Resolution → Model Upscale/I2I
-Settings: min_res=704, max_res=1280, multiple_of=2, constraint_mode="Prioritize Min Resolution"
-```
-Optimizes images for diffusion model processing while maintaining quality.
-
-#### Batch Processing with VRAM Limits
-```
-Load Images (Batch) → Constrain Resolution → Model Processing
-Settings: max_res=1024, constraint_mode="Prioritize Max Resolution (Strict)", crop_as_required=True
-```
-Ensures no image exceeds VRAM capacity while processing batches.
-
-#### Portrait Cropping for Headshots
-```
-Load Image → Constrain Resolution → Output
-Settings: min_res=512, max_res=768, crop_as_required=True, crop_position="top"
-```
-Intelligently crops portraits to keep faces (typically in upper portion).
-
-### Advanced Tips
-
-- **Extreme Aspect Ratios**: For very wide or very tall images (e.g., panoramas, screenshots), use "Prioritize Max Resolution (Strict)" to prevent excessive upscaling on one dimension.
-
-- **Preserving Every Pixel**: If you absolutely need to keep the entire image without cropping, set `crop_as_required=False` and `multiple_of=1`. Note that this may produce dimensions that aren't optimal for all models.
-
-- **Quality vs. Speed**: Higher `multiple_of` values (32, 64) can improve processing speed in some models but may crop more aggressively. Test to find the sweet spot for your workflow.
-
-- **Aspect Ratio Monitoring**: Use the `final_aspect_ratio` and `original_aspect_ratio` outputs to monitor how much the aspect ratio changed. Connect these to display nodes to track during batch processing.
-
-## Technical Details
-
-### Resizing Algorithm
-- Uses ComfyUI's own resizer (`comfy.utils.common_upscale`) so results match core resize nodes, with selectable interpolation (lanczos by default)
-- Bicubic/lanczos output is clamped to the valid [0, 1] range to prevent kernel overshoot artifacts
-- Maintains proper tensor shape handling: `[batch, height, width, channels]`
-- High-quality resizing suitable for AI model inputs
-
-### Cropping Algorithm
-When `crop_as_required` is enabled:
-1. Image is first resized to preserve aspect ratio on the larger dimension
-2. Minimal cropping is applied to achieve exact target dimensions
-3. Crop position determines which portion of the image is preserved
-4. This approach maximizes quality by minimizing information loss
-
-### Input Validation
-The node validates:
-- `max_res` must be ≥ `min_res`
-- `min_res` must be ≥ 1
-- `multiple_of` must be ≥ 1
-- All values must be within reasonable bounds (up to 65536 for resolutions)
+- **Image-to-video prep**: `min_res=768, max_res=1024, multiple_of=16` — exact, divisible dimensions every time
+- **Hard VRAM cap**: `max_res=1024, constraint_mode=Prioritize Max Resolution (Strict)`
+- **Keep every pixel** (no cropping): `crop_as_required=False, multiple_of=1`
+- **Headshots**: `crop_position=top` keeps faces when cropping portraits
 
 ## Installation
 
-### Using ComfyUI Manager (Recommended)
-1. Open ComfyUI Manager
-2. Search for "Constrain Resolution"
-3. Click Install
-4. Restart ComfyUI
+**ComfyUI Manager**: search for "Constrain Resolution" and install.
 
-### Manual Installation
-1. Navigate to your `ComfyUI/custom_nodes/` directory
-2. Clone this repository:
-   ```bash
-   git clone https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution.git
-   ```
-3. Restart ComfyUI
+**Manual**:
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution.git
+```
+Restart ComfyUI. No dependencies beyond ComfyUI itself (Python 3.10+).
 
-The node has no dependencies beyond ComfyUI's own environment. Requires Python 3.10+.
+## Notes
 
-## ComfyUI v3 Compatibility
+- Resizing uses ComfyUI's own resizer (`comfy.utils.common_upscale`), so results match core resize nodes; bicubic/lanczos output is clamped to the valid range to avoid overshoot artifacts.
+- Divisibility, min/max, and crop dimensions are enforced together — the reported `width`/`height` always match the actual output tensor.
+- Built on the ComfyUI v3 node API (`comfy_api.latest`).
 
-This node is built using the **ComfyUI v3 specification** with the following modern features:
-- Uses `comfy_api.latest` for future-proof compatibility
-- Object-oriented schema with `io.ComfyNode` base class
-- Type-safe inputs and outputs with comprehensive tooltips
-- Stateless execution model with classmethod-based `execute()`
-- Input validation with `validate_inputs()`
-- Fully async-compatible entry point
+## Version history
 
-## Version History
-
-- **v2.3.0**: Added `resize_method` selection (lanczos default, bicubic, bilinear, nearest-exact, area) using ComfyUI's core resizer; fixed a rare off-by-one where the cropped output could be 1px smaller than the reported dimensions; removed unused numpy dependency; Python 3.10 compatibility; switched console output to proper logging
-- **v2.2**: Fixed strict max-resolution mode exceeding `max_res` after rounding to multiples; added test suite
-- **v2.1.0**: Added image resizing, intelligent cropping, crop position control, comprehensive tooltips, input validation, and 65k resolution support
+- **v2.3.1**: Rewrote README with current screenshots; enforce `min_res` even when rounding to a large `multiple_of` would dip below it
+- **v2.3.0**: Added `resize_method` selection (lanczos default); fixed a rare off-by-one in cropped output size; removed unused numpy dependency; Python 3.10 compatibility; proper logging
+- **v2.2**: Fixed strict max-resolution mode exceeding `max_res` after rounding; added test suite
+- **v2.1.0**: Image resizing, smart cropping, crop position control, tooltips, input validation
 - **v2.0.0**: Migrated to ComfyUI v3 specification
-- **v1.1**: Initial release with resolution analysis and constraint calculation
+- **v1.1**: Initial release
 
 ## License
 
-See the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Issues and pull requests are welcome! Please ensure any changes maintain compatibility with ComfyUI v3 specification.
-
-## Support
-
-If you encounter issues or have questions:
-- Open an issue on [GitHub](https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution/issues)
-- Check existing issues for solutions
-- Provide example images and settings when reporting problems
+See [LICENSE](LICENSE). Issues and PRs welcome on [GitHub](https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution/issues).
