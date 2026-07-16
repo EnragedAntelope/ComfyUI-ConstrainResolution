@@ -1,1 +1,1 @@
-numpy
+# No dependencies beyond ComfyUI's own environment (torch is provided by ComfyUI).

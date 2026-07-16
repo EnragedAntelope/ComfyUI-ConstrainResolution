@@ -1,5 +1,8 @@
+import sys
+
 import pytest
-from nodes import ConstrainResolution, ConstraintMode
+import torch
+from nodes import ConstrainResolution, ConstraintMode, ResizeMethod
 
 STRICT = ConstraintMode.MAX_RES_STRICT.value
 MIN = ConstraintMode.MIN_RES.value
@@ -106,3 +109,63 @@ class TestRoundToMultiple:
 
     def test_minimum_floor(self):
         assert ConstrainResolution.round_to_multiple(1, 32) == 32
+
+
+def run_node(image, **overrides):
+    """Call execute() and return the positional outputs captured by the mocked io.NodeOutput."""
+    mock_io = sys.modules['comfy_api.latest'].io
+    params = dict(
+        min_res=704,
+        max_res=1280,
+        multiple_of=2,
+        resize_method=ResizeMethod.BILINEAR.value,
+        constraint_mode=MIN,
+        crop_as_required=True,
+        crop_position="center",
+    )
+    params.update(overrides)
+    mock_io.NodeOutput.reset_mock()
+    ConstrainResolution.execute(image=image, **params)
+    return mock_io.NodeOutput.call_args.args
+
+
+class TestExecuteShapes:
+    @pytest.mark.parametrize("size", [
+        (500, 333), (333, 500), (1000, 1000), (1920, 1080),
+        (101, 997), (2543, 1071), (1001, 1000), (703, 704),
+    ])
+    def test_output_shape_matches_reported_dims(self, size):
+        """The resized tensor must exactly match the reported width/height outputs."""
+        w, h = size
+        image = torch.rand(1, h, w, 3)
+        resized, original, out_w, out_h, _, _ = run_node(image, multiple_of=32)
+        assert resized.shape == (1, out_h, out_w, 3)
+        assert original.shape == image.shape
+
+    def test_no_crop_shape_still_matches(self):
+        image = torch.rand(1, 333, 500, 3)
+        resized, _, out_w, out_h, _, _ = run_node(image, crop_as_required=False, multiple_of=32)
+        assert resized.shape == (1, out_h, out_w, 3)
+
+
+class TestResizeMethods:
+    @pytest.mark.parametrize("method", [e.value for e in ResizeMethod])
+    def test_all_methods_produce_target_shape(self, method):
+        image = torch.rand(2, 100, 150, 3)
+        out = ConstrainResolution.resize_image(image, 300, 200, method)
+        assert out.shape == (2, 200, 300, 3)
+
+    @pytest.mark.parametrize("method", ["bicubic", "lanczos"])
+    def test_overshoot_is_clamped(self, method):
+        image = torch.rand(1, 64, 64, 3)
+        out = ConstrainResolution.resize_image(image, 128, 128, method)
+        assert out.min() >= 0.0
+        assert out.max() <= 1.0
+
+
+class TestCropImage:
+    @pytest.mark.parametrize("position", ["center", "top", "bottom", "left", "right"])
+    def test_crop_positions_yield_exact_dims(self, position):
+        image = torch.rand(1, 120, 200, 3)
+        out = ConstrainResolution.crop_image(image, 100, 100, position)
+        assert out.shape == (1, 100, 100, 3)
