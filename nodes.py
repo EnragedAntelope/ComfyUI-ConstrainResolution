@@ -1,23 +1,39 @@
+import logging
+import math
+from enum import Enum
+from typing import Tuple
+
 import torch
 import torch.nn.functional as F
-from typing import Tuple
 from comfy_api.latest import ComfyExtension, io
-from enum import StrEnum
+
+logger = logging.getLogger(__name__)
 
 
-class ConstraintMode(StrEnum):
+# (str, Enum) instead of StrEnum keeps the pack importable on Python 3.10,
+# which ComfyUI still supports.
+class ConstraintMode(str, Enum):
     """Constraint mode for handling extreme aspect ratios"""
     MIN_RES = "Prioritize Min Resolution"
     MAX_RES_STRICT = "Prioritize Max Resolution (Strict)"
 
 
-class CropPosition(StrEnum):
+class CropPosition(str, Enum):
     """Position for cropping when aspect ratios don't match"""
     CENTER = "center"
     TOP = "top"
     BOTTOM = "bottom"
     LEFT = "left"
     RIGHT = "right"
+
+
+class ResizeMethod(str, Enum):
+    """Interpolation method used for resizing"""
+    BILINEAR = "bilinear"
+    BICUBIC = "bicubic"
+    LANCZOS = "lanczos"
+    NEAREST_EXACT = "nearest-exact"
+    AREA = "area"
 
 
 class ConstrainResolution(io.ComfyNode):
@@ -41,6 +57,7 @@ class ConstrainResolution(io.ComfyNode):
                 "• Use 'Prioritize Min Resolution' to ensure images are never too small (may exceed max on one dimension)\n"
                 "• Use 'Prioritize Max Resolution (Strict)' for hard VRAM limits (may go below min on one dimension)\n"
                 "• Set 'Multiple Of' to 2 for most models, or higher values (8, 16, 32, 64) for optimal performance\n"
+                "• 'lanczos' or 'bicubic' resize methods give the sharpest results; 'bilinear' is the fastest\n"
                 "• 'Crop as Required' is enabled by default for immediate compatibility with strict dimension requirements\n"
                 "• The node outputs both the resized image and the original for workflow flexibility"
             ),
@@ -75,6 +92,19 @@ class ConstrainResolution(io.ComfyNode):
                         "Ensures output dimensions are multiples of this number. "
                         "Common values: 2 (most models), 8, 16, 32, or 64 (optimal performance). "
                         "Set to 1 to disable rounding."
+                    )
+                ),
+                io.Combo.Input(
+                    "resize_method",
+                    options=[e.value for e in ResizeMethod],
+                    default=ResizeMethod.LANCZOS.value,
+                    tooltip=(
+                        "Interpolation method used when resizing.\n"
+                        "• lanczos: Sharpest results, best overall quality (default)\n"
+                        "• bicubic: High quality, slightly softer than lanczos\n"
+                        "• bilinear: Fast, slightly soft\n"
+                        "• nearest-exact: No interpolation — for pixel art or masks\n"
+                        "• area: Good for large downscales"
                     )
                 ),
 
@@ -215,6 +245,15 @@ class ConstrainResolution(io.ComfyNode):
         final_width = ConstrainResolution.round_to_multiple(int(new_width), multiple_of)
         final_height = ConstrainResolution.round_to_multiple(int(new_height), multiple_of)
 
+        # Nearest-multiple rounding can drop a dimension back below min_res
+        # (e.g. min_res=1100, multiple_of=256 -> 1024). In min-res mode, bump
+        # such a dimension up to the next multiple so the guarantee holds.
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            if final_width < min_res:
+                final_width = math.ceil(min_res / multiple_of) * multiple_of
+            if final_height < min_res:
+                final_height = math.ceil(min_res / multiple_of) * multiple_of
+
         # 4. In strict mode, rounding can exceed max_res (e.g. round_to_multiple(2160, 32) = 2176).
         #    Clamp to the largest valid multiple of multiple_of that is <= max_res.
         if constraint_mode == ConstraintMode.MAX_RES_STRICT.value:
@@ -225,37 +264,49 @@ class ConstrainResolution(io.ComfyNode):
         return final_width, final_height
 
     @staticmethod
-    def resize_image(image: torch.Tensor, target_width: int, target_height: int) -> torch.Tensor:
+    def resize_image(
+        image: torch.Tensor,
+        target_width: int,
+        target_height: int,
+        method: str = ResizeMethod.BILINEAR.value
+    ) -> torch.Tensor:
         """
-        Resize image tensor to target dimensions using bilinear interpolation.
+        Resize image tensor to target dimensions.
 
         Args:
             image: Input tensor in format [batch, height, width, channels]
             target_width: Target width in pixels
             target_height: Target height in pixels
+            method: Interpolation method (see ResizeMethod)
 
         Returns:
             Resized tensor in same format as input
         """
-        # ComfyUI images are [batch, height, width, channels]
-        # torch needs [batch, channels, height, width] for interpolate
-        batch, height, width, channels = image.shape
-
-        # Permute to [batch, channels, height, width]
+        # ComfyUI images are [batch, height, width, channels];
+        # resizing needs [batch, channels, height, width]
         image_permuted = image.permute(0, 3, 1, 2)
 
-        # Resize using bilinear interpolation
-        resized = F.interpolate(
-            image_permuted,
-            size=(target_height, target_width),
-            mode='bilinear',
-            align_corners=False
-        )
+        try:
+            # Prefer ComfyUI's resizer (adds lanczos, matches core node behavior)
+            from comfy.utils import common_upscale
+            resized = common_upscale(image_permuted, target_width, target_height, method, "disabled")
+        except ImportError:
+            # Outside ComfyUI (e.g. tests): torch has no lanczos, use bicubic
+            if method == ResizeMethod.LANCZOS.value:
+                method = ResizeMethod.BICUBIC.value
+            kwargs = {"align_corners": False} if method in ("bilinear", "bicubic") else {}
+            resized = F.interpolate(
+                image_permuted,
+                size=(target_height, target_width),
+                mode=method,
+                **kwargs
+            )
 
-        # Permute back to [batch, height, width, channels]
-        resized = resized.permute(0, 2, 3, 1)
+        # bicubic/lanczos kernels can overshoot the valid [0, 1] range
+        if method in (ResizeMethod.BICUBIC.value, ResizeMethod.LANCZOS.value):
+            resized = resized.clamp(0.0, 1.0)
 
-        return resized
+        return resized.permute(0, 2, 3, 1)
 
     @staticmethod
     def crop_image(
@@ -326,6 +377,7 @@ class ConstrainResolution(io.ComfyNode):
         min_res,
         max_res,
         multiple_of,
+        resize_method,
         constraint_mode,
         crop_as_required,
         crop_position
@@ -342,7 +394,7 @@ class ConstrainResolution(io.ComfyNode):
         )
 
         # Resize image to target dimensions
-        resized_image = cls.resize_image(image, target_width, target_height)
+        resized_image = cls.resize_image(image, target_width, target_height, resize_method)
 
         # Calculate aspect ratio after resize
         final_aspect_ratio = cls.calculate_aspect_ratio(target_width, target_height)
@@ -357,29 +409,32 @@ class ConstrainResolution(io.ComfyNode):
 
             if aspect_ratio_deviation > 0.1:  # If more than 0.1% deviation
                 # Resize to preserve aspect ratio, making one dimension larger than target, then crop
+                # ceil + max keep the intermediate dimension at or above the target,
+                # so the crop below never has to grow the image
                 if width / height > target_width / target_height:
                     # Original is wider (more landscape), resize based on height and crop width
                     # This ensures height matches target, width will be larger and cropped
-                    intermediate_width = int(target_height * (width / height))
-                    resized_image = cls.resize_image(image, intermediate_width, target_height)
+                    intermediate_width = max(target_width, math.ceil(target_height * width / height))
+                    resized_image = cls.resize_image(image, intermediate_width, target_height, resize_method)
                 else:
                     # Original is taller (more portrait), resize based on width and crop height
                     # This ensures width matches target, height will be larger and cropped
-                    intermediate_height = int(target_width / (width / height))
-                    resized_image = cls.resize_image(image, target_width, intermediate_height)
+                    intermediate_height = max(target_height, math.ceil(target_width * height / width))
+                    resized_image = cls.resize_image(image, target_width, intermediate_height, resize_method)
 
                 # Crop to exact target dimensions
                 resized_image = cls.crop_image(resized_image, target_width, target_height, crop_position)
 
-                print(f"Image cropped to achieve exact dimensions {target_width}x{target_height}")
+                logger.debug("Image cropped to achieve exact dimensions %dx%d", target_width, target_height)
 
         # Log aspect ratio deviation warning if significant
         if original_aspect_ratio > 0 and not crop_as_required:
             aspect_ratio_deviation = abs((final_aspect_ratio - original_aspect_ratio) / original_aspect_ratio * 100)
             if aspect_ratio_deviation > 1:  # 1% tolerance for rounding
-                print(
-                    f"ℹ️  Aspect ratio changed by {aspect_ratio_deviation:.2f}% due to rounding. "
-                    f"Enable 'Crop as Required' to preserve exact aspect ratio."
+                logger.info(
+                    "Aspect ratio changed by %.2f%% due to rounding. "
+                    "Enable 'Crop as Required' to preserve exact aspect ratio.",
+                    aspect_ratio_deviation
                 )
 
         return io.NodeOutput(

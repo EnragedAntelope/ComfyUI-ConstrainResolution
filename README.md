@@ -7,7 +7,7 @@ A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) node that intelligently r
 
 ## Features
 
-- **Intelligent Image Resizing**: Automatically resizes images using high-quality bilinear interpolation
+- **Intelligent Image Resizing**: Automatically resizes images with your choice of interpolation (lanczos, bicubic, bilinear, nearest-exact, area)
 - **Aspect Ratio Preservation**: Maintains original aspect ratio through smart cropping when needed
 - **Flexible Constraint Modes**: Choose between prioritizing minimum resolution or strictly enforcing maximum limits
 - **Multiple Alignment**: Ensures dimensions are multiples of specified values (e.g., 2, 8, 16, 32, 64 for performance)
@@ -39,6 +39,12 @@ This node handles all these requirements intelligently, ensuring your images are
   - `8` or `16` - Some models with stricter alignment requirements
   - `32` or `64` - Optimal for certain architectures and performance
   - `1` - Disable rounding (use exact calculated dimensions)
+- **resize_method** (default: "lanczos"): Interpolation method used when resizing.
+  - `lanczos` - Sharpest results, best overall quality (default)
+  - `bicubic` - High quality, slightly softer than lanczos
+  - `bilinear` - Fast, slightly soft
+  - `nearest-exact` - No interpolation; best for pixel art and masks
+  - `area` - Good for large downscales
 
 ### Constraint Behavior
 - **constraint_mode** (default: "Prioritize Min Resolution"): How to handle conflicts when extreme aspect ratios make it impossible to satisfy both min and max constraints.
@@ -126,7 +132,8 @@ Intelligently crops portraits to keep faces (typically in upper portion).
 ## Technical Details
 
 ### Resizing Algorithm
-- Uses PyTorch's `F.interpolate` with bilinear interpolation and `align_corners=False`
+- Uses ComfyUI's own resizer (`comfy.utils.common_upscale`) so results match core resize nodes, with selectable interpolation (lanczos by default)
+- Bicubic/lanczos output is clamped to the valid [0, 1] range to prevent kernel overshoot artifacts
 - Maintains proper tensor shape handling: `[batch, height, width, channels]`
 - High-quality resizing suitable for AI model inputs
 
@@ -160,7 +167,7 @@ The node validates:
    ```
 3. Restart ComfyUI
 
-The node will automatically install its dependencies (`numpy`).
+The node has no dependencies beyond ComfyUI's own environment. Requires Python 3.10+.
 
 ## ComfyUI v3 Compatibility
 
@@ -174,6 +181,8 @@ This node is built using the **ComfyUI v3 specification** with the following mod
 
 ## Version History
 
+- **v2.3.0**: Added `resize_method` selection (lanczos default, bicubic, bilinear, nearest-exact, area) using ComfyUI's core resizer; fixed a rare off-by-one where the cropped output could be 1px smaller than the reported dimensions; removed unused numpy dependency; Python 3.10 compatibility; switched console output to proper logging
+- **v2.2**: Fixed strict max-resolution mode exceeding `max_res` after rounding to multiples; added test suite
 - **v2.1.0**: Added image resizing, intelligent cropping, crop position control, comprehensive tooltips, input validation, and 65k resolution support
 - **v2.0.0**: Migrated to ComfyUI v3 specification
 - **v1.1**: Initial release with resolution analysis and constraint calculation
