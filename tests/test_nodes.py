@@ -84,6 +84,17 @@ class TestMinRes:
         # The short dimension should be at least min_res
         assert min(w, h) >= 704
 
+    def test_rounding_never_drops_below_min_res(self):
+        """Nearest-multiple rounding must not violate the min_res guarantee.
+
+        min_res=1100 with multiple_of=256: 1100 would round to 1024 (< min_res);
+        it must be bumped up to 1280 instead.
+        """
+        w, h = calc(1000, 1000, 1100, 4096, 256, MIN)
+        assert min(w, h) >= 1100
+        assert w % 256 == 0
+        assert h % 256 == 0
+
     def test_min_res_normal_case(self):
         """In MIN_RES mode with no extreme ratio, both dims should stay within normal range."""
         w, h = calc(500, 333, 704, 2048, 32, MIN)

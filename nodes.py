@@ -245,6 +245,15 @@ class ConstrainResolution(io.ComfyNode):
         final_width = ConstrainResolution.round_to_multiple(int(new_width), multiple_of)
         final_height = ConstrainResolution.round_to_multiple(int(new_height), multiple_of)
 
+        # Nearest-multiple rounding can drop a dimension back below min_res
+        # (e.g. min_res=1100, multiple_of=256 -> 1024). In min-res mode, bump
+        # such a dimension up to the next multiple so the guarantee holds.
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            if final_width < min_res:
+                final_width = math.ceil(min_res / multiple_of) * multiple_of
+            if final_height < min_res:
+                final_height = math.ceil(min_res / multiple_of) * multiple_of
+
         # 4. In strict mode, rounding can exceed max_res (e.g. round_to_multiple(2160, 32) = 2176).
         #    Clamp to the largest valid multiple of multiple_of that is <= max_res.
         if constraint_mode == ConstraintMode.MAX_RES_STRICT.value:
