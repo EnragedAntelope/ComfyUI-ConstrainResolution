@@ -71,6 +71,7 @@ Restart ComfyUI. No dependencies beyond ComfyUI itself (Python 3.10+).
 
 ## Version history
 
+- **v2.3.2**: Added CI test workflow (pytest on Python 3.10–3.12); warn on very large upscales in "Prioritize Min Resolution" mode; pass malformed zero-dimension inputs through unchanged instead of erroring
 - **v2.3.1**: Rewrote README with current screenshots; enforce `min_res` even when rounding to a large `multiple_of` would dip below it
 - **v2.3.0**: Added `resize_method` selection (lanczos default); fixed a rare off-by-one in cropped output size; removed unused numpy dependency; Python 3.10 compatibility; proper logging
 - **v2.2**: Fixed strict max-resolution mode exceeding `max_res` after rounding; added test suite
