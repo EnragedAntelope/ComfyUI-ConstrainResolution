@@ -180,3 +180,27 @@ class TestCropImage:
         image = torch.rand(1, 120, 200, 3)
         out = ConstrainResolution.crop_image(image, 100, 100, position)
         assert out.shape == (1, 100, 100, 3)
+
+
+class TestExecuteGuards:
+    def test_zero_dimension_input_passes_through(self):
+        """A malformed tensor with a zero dimension must pass through, not crash the resizer."""
+        image = torch.rand(1, 0, 500, 3)
+        resized, original, out_w, out_h, _, _ = run_node(image)
+        assert resized.shape == image.shape
+        assert original.shape == image.shape
+        assert (out_w, out_h) == (500, 0)
+
+    def test_extreme_ratio_min_res_warns(self, caplog):
+        """Extreme aspect ratio in MIN_RES mode should warn about the large upscale."""
+        image = torch.rand(1, 100, 1000, 3)
+        with caplog.at_level("WARNING"):
+            run_node(image, constraint_mode=MIN)
+        assert any("Upscaling by" in r.message for r in caplog.records)
+
+    def test_normal_image_does_not_warn(self, caplog):
+        """A normal image must not trigger the upscale warning."""
+        image = torch.rand(1, 800, 1000, 3)
+        with caplog.at_level("WARNING"):
+            run_node(image, constraint_mode=MIN)
+        assert not any("Upscaling by" in r.message for r in caplog.records)

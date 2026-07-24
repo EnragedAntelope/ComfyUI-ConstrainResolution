@@ -393,6 +393,29 @@ class ConstrainResolution(io.ComfyNode):
             width, height, min_res, max_res, multiple_of, constraint_mode
         )
 
+        # Degenerate input (empty/malformed tensor) collapses to a 0 target,
+        # which would crash the resizer. Pass the image through untouched instead.
+        if target_width == 0 or target_height == 0:
+            logger.warning(
+                "Input has a zero dimension (%dx%d); passing image through unchanged.",
+                width, height
+            )
+            return io.NodeOutput(
+                image, image, width, height,
+                original_aspect_ratio, original_aspect_ratio
+            )
+
+        # Warn when Prioritize Min Resolution forces a large upscale (extreme aspect
+        # ratios can blow up the long side and risk OOM). Strict mode caps this instead.
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            upscale_factor = max(target_width / width, target_height / height)
+            if upscale_factor > 4:
+                logger.warning(
+                    "Upscaling by %.1fx to %dx%d to satisfy min_res on an extreme aspect ratio. "
+                    "Use 'Prioritize Max Resolution (Strict)' to cap output size and avoid large upscales.",
+                    upscale_factor, target_width, target_height
+                )
+
         # Resize image to target dimensions
         resized_image = cls.resize_image(image, target_width, target_height, resize_method)
 
