@@ -204,3 +204,147 @@ class TestExecuteGuards:
         with caplog.at_level("WARNING"):
             run_node(image, constraint_mode=MIN)
         assert not any("Upscaling by" in r.message for r in caplog.records)
+
+
+class TestUpscaleBudget:
+    """A tiny sliver of an image must not be blown up into a multi-GB tensor."""
+
+    def test_extreme_ratio_raises_instead_of_exhausting_memory(self):
+        # 1x690 at the stock defaults previously asked for 704x485760 (~4.1 GB
+        # per batch item), which OOM-killed the ComfyUI process.
+        with pytest.raises(ValueError, match="safety limit"):
+            calc(1, 690, 704, 1280, 2, MIN)
+
+    def test_error_names_the_escape_hatch(self):
+        with pytest.raises(ValueError, match="Prioritize Max Resolution"):
+            calc(8, 4000, 704, 1280, 2, MIN)
+
+    def test_strict_mode_has_no_budget_error(self):
+        """Strict mode is already bounded, so the same input must succeed."""
+        w, h = calc(1, 690, 704, 1280, 2, STRICT)
+        assert w <= 1280 and h <= 1280
+
+    @pytest.mark.parametrize("size", [(1000, 100), (100, 1000), (3000, 1000), (1920, 1080)])
+    def test_reasonable_ratios_still_allowed(self, size):
+        """Ordinary and moderately wide images must not trip the budget."""
+        w, h = calc(*size, 704, 1280, 2, MIN)
+        assert min(w, h) >= 704
+
+    def test_budget_scales_with_max_res(self):
+        """A larger max_res raises the ceiling rather than being a fixed cap."""
+        with pytest.raises(ValueError):
+            calc(1, 400, 704, 1280, 2, MIN)
+        w, h = calc(1, 400, 704, 8192, 2, MIN)
+        assert min(w, h) >= 704
+
+
+class TestDegenerateConfigs:
+    """Configurations that used to yield a zero dimension and a silent no-op."""
+
+    def test_multiple_of_larger_than_max_res_raises(self):
+        # Previously returned (0, 0), which execute() turned into a silent
+        # passthrough logged as if the *input* had a zero dimension.
+        with pytest.raises(ValueError, match="larger than max_res"):
+            calc(512, 512, 8, 200, 256, STRICT)
+
+    def test_thin_strip_does_not_collapse_to_zero_width(self):
+        # int() truncation drove this to a width of 0 when multiple_of == 1.
+        w, h = calc(1, 677, 8, 65, 1, STRICT)
+        assert w >= 1 and h >= 1
+
+    @pytest.mark.parametrize("mode", [MIN, STRICT])
+    def test_multiple_of_zero_raises_not_zero_division(self, mode):
+        with pytest.raises(ValueError, match="multiple_of"):
+            calc(500, 333, 704, 1280, 0, mode)
+
+    def test_round_to_multiple_rejects_zero(self):
+        with pytest.raises(ValueError, match="multiple_of"):
+            ConstrainResolution.round_to_multiple(100, 0)
+
+    def test_round_to_multiple_never_returns_zero(self):
+        assert ConstrainResolution.round_to_multiple(0, 1) == 1
+        assert ConstrainResolution.round_to_multiple(0, 32) == 32
+
+    def test_unknown_constraint_mode_raises(self):
+        # Falling through applied neither the min floor nor the max clamp,
+        # silently violating both limits.
+        with pytest.raises(ValueError, match="Unknown constraint_mode"):
+            calc(1000, 100, 704, 1280, 32, "TypoMode")
+
+
+class TestCropGuards:
+    def test_crop_larger_than_source_raises(self):
+        image = torch.rand(1, 50, 50, 3)
+        with pytest.raises(ValueError, match="cannot grow"):
+            ConstrainResolution.crop_image(image, 100, 100, "center")
+
+    def test_partial_overflow_also_raises(self):
+        """Silently returned 50x30 instead of the requested 100x30."""
+        image = torch.rand(1, 50, 50, 3)
+        with pytest.raises(ValueError, match="cannot grow"):
+            ConstrainResolution.crop_image(image, 100, 30, "center")
+
+    def test_exact_size_is_a_no_op(self):
+        image = torch.rand(1, 50, 60, 3)
+        assert ConstrainResolution.crop_image(image, 60, 50, "center") is image
+
+
+class TestSingleResize:
+    def test_crop_path_resizes_only_once(self, monkeypatch):
+        """The crop path used to compute a full resize and throw it away."""
+        calls = []
+        real = ConstrainResolution.resize_image
+
+        def counting(image, w, h, method=None):
+            calls.append((w, h))
+            return real(image, w, h, method)
+
+        monkeypatch.setattr(ConstrainResolution, "resize_image", staticmethod(counting))
+        image = torch.rand(1, 1013, 1800, 3)
+        resized, _, out_w, out_h, _, _ = run_node(image, multiple_of=32)
+        assert len(calls) == 1, f"expected a single resize, got {calls}"
+        assert resized.shape == (1, out_h, out_w, 3)
+
+    def test_no_crop_path_resizes_only_once(self, monkeypatch):
+        calls = []
+        real = ConstrainResolution.resize_image
+
+        def counting(image, w, h, method=None):
+            calls.append((w, h))
+            return real(image, w, h, method)
+
+        monkeypatch.setattr(ConstrainResolution, "resize_image", staticmethod(counting))
+        image = torch.rand(1, 1000, 1000, 3)
+        run_node(image, crop_as_required=False, multiple_of=32)
+        assert len(calls) == 1
+
+
+class TestValidateInputs:
+    def test_signature_has_no_kwargs(self):
+        """**kwargs makes ComfyUI skip its own range and combo validation for
+        every input on this node (execution.py: validate_has_kwargs)."""
+        import inspect
+        spec = inspect.getfullargspec(ConstrainResolution.validate_inputs.__func__)
+        assert spec.varkw is None
+        assert spec.varargs is None
+        assert spec.args == ["cls", "min_res", "max_res", "multiple_of"]
+
+    def test_accepts_valid_inputs(self):
+        assert ConstrainResolution.validate_inputs(704, 1280, 2) is True
+
+    def test_rejects_max_below_min(self):
+        assert isinstance(ConstrainResolution.validate_inputs(1280, 704, 2), str)
+
+    def test_rejects_bad_multiple_and_min(self):
+        assert isinstance(ConstrainResolution.validate_inputs(704, 1280, 0), str)
+        assert isinstance(ConstrainResolution.validate_inputs(0, 1280, 2), str)
+
+
+class TestExtremeRatioCropping:
+    def test_very_tall_image_is_cropped_not_distorted(self):
+        """A ratio that rounds to 0.0 used to skip the crop branch entirely."""
+        image = torch.rand(1, 3000, 1, 3)
+        resized, _, out_w, out_h, _, _ = run_node(
+            image, multiple_of=32, constraint_mode=STRICT
+        )
+        assert resized.shape == (1, out_h, out_w, 3)

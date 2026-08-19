@@ -1,7 +1,7 @@
 [project]
 name = "constrainresolution"
 description = "Resize images to fit min/max resolution limits with dimensions guaranteed divisible by 2/8/16/32/64. Aspect-ratio-preserving resize with smart cropping — ideal for image-to-image and image-to-video workflows."
-version = "2.3.2"
+version = "2.4.0"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = []

@@ -9,6 +9,16 @@ from comfy_api.latest import ComfyExtension, io
 
 logger = logging.getLogger(__name__)
 
+# "Prioritize Min Resolution" has no natural upper bound: holding both sides at
+# or above min_res on an extreme aspect ratio scales the long side without
+# limit. A 1x690 input at the default settings asks for 704x485760 — over 4 GB
+# per batch item, enough to OOM the whole ComfyUI process. Refuse to allocate
+# more than this many max_res-sized boxes and tell the user to switch modes.
+MAX_OUTPUT_PIXEL_BUDGET_FACTOR = 16
+
+# Upscales beyond this factor are legal but worth flagging in the log.
+UPSCALE_WARN_FACTOR = 4
+
 
 # (str, Enum) instead of StrEnum keeps the pack importable on Python 3.10,
 # which ComfyUI still supports.
@@ -74,14 +84,22 @@ class ConstrainResolution(io.ComfyNode):
                     default=704,
                     min=1,
                     max=65536,
-                    tooltip="Minimum resolution in pixels for width and height. Images smaller than this will be upscaled."
+                    tooltip=(
+                        "Minimum resolution in pixels for width and height. "
+                        "Neither output dimension will fall below this."
+                    )
                 ),
                 io.Int.Input(
                     "max_res",
                     default=1280,
                     min=1,
                     max=65536,
-                    tooltip="Maximum resolution in pixels for width and height. Images larger than this will be downscaled."
+                    tooltip=(
+                        "Maximum resolution in pixels. Every image is rescaled so its longest side "
+                        "lands here, so images already in range are resized too. In "
+                        "'Prioritize Min Resolution' mode the long side may exceed this on extreme "
+                        "aspect ratios."
+                    )
                 ),
                 io.Int.Input(
                     "multiple_of",
@@ -175,8 +193,15 @@ class ConstrainResolution(io.ComfyNode):
         )
 
     @classmethod
-    def validate_inputs(cls, min_res, max_res, multiple_of, **kwargs):
-        """Validate input parameters"""
+    def validate_inputs(cls, min_res, max_res, multiple_of):
+        """Validate input parameters.
+
+        The signature deliberately declares only the values checked here and
+        takes no **kwargs: ComfyUI skips its own range and combo-option
+        validation for every input once this function accepts **kwargs
+        (see ``validate_inputs`` in ComfyUI's execution.py). Listing just these
+        three leaves the combo inputs to ComfyUI's built-in checks.
+        """
         if max_res < min_res:
             return f"max_res ({max_res}) must be greater than or equal to min_res ({min_res})"
 
@@ -197,9 +222,11 @@ class ConstrainResolution(io.ComfyNode):
 
     @staticmethod
     def round_to_multiple(value: int, multiple: int) -> int:
-        """Round a value to the nearest multiple of the specified number"""
+        """Round a value to the nearest multiple, never dropping below one pixel"""
+        if multiple < 1:
+            raise ValueError(f"multiple_of must be at least 1, got {multiple}")
         if multiple == 1:
-            return value
+            return max(1, value)
         return max(multiple, multiple * round(value / multiple))
 
     @staticmethod
@@ -212,6 +239,12 @@ class ConstrainResolution(io.ComfyNode):
         constraint_mode: str
     ) -> Tuple[int, int]:
         """Calculate optimal dimensions based on constraints"""
+        if multiple_of < 1:
+            raise ValueError(f"multiple_of must be at least 1, got {multiple_of}")
+        if constraint_mode not in (ConstraintMode.MIN_RES.value, ConstraintMode.MAX_RES_STRICT.value):
+            # Silently falling through would apply neither the min_res floor nor
+            # the max_res clamp, quietly violating both limits.
+            raise ValueError(f"Unknown constraint_mode: {constraint_mode!r}")
         if height == 0 or width == 0:
             return 0, 0
 
@@ -258,8 +291,32 @@ class ConstrainResolution(io.ComfyNode):
         #    Clamp to the largest valid multiple of multiple_of that is <= max_res.
         if constraint_mode == ConstraintMode.MAX_RES_STRICT.value:
             max_allowed = (max_res // multiple_of) * multiple_of
+            if max_allowed == 0:
+                # No positive multiple of multiple_of fits inside max_res, so the
+                # request is unsatisfiable. Clamping anyway would return 0 and
+                # silently pass the image through untouched.
+                raise ValueError(
+                    f"multiple_of ({multiple_of}) is larger than max_res ({max_res}), so no valid "
+                    f"output size exists in '{ConstraintMode.MAX_RES_STRICT.value}' mode. "
+                    f"Lower multiple_of or raise max_res."
+                )
             final_width = min(final_width, max_allowed)
             final_height = min(final_height, max_allowed)
+
+        # 5. Refuse absurd allocations rather than letting the resize OOM the
+        #    process. Only reachable in min-res mode, which is the only mode
+        #    without an upper bound.
+        if constraint_mode == ConstraintMode.MIN_RES.value:
+            budget = max(min_res, max_res) ** 2 * MAX_OUTPUT_PIXEL_BUDGET_FACTOR
+            if final_width * final_height > budget:
+                raise ValueError(
+                    f"'{ConstraintMode.MIN_RES.value}' needs {final_width}x{final_height} "
+                    f"({final_width * final_height / 1e6:.1f} MP) to hold both sides at or above "
+                    f"min_res ({min_res}) for a {width}x{height} input. That exceeds the "
+                    f"{budget / 1e6:.1f} MP safety limit and would likely exhaust memory. "
+                    f"Switch to '{ConstraintMode.MAX_RES_STRICT.value}' to cap the output size, "
+                    f"or lower min_res."
+                )
 
         return final_width, final_height
 
@@ -268,7 +325,7 @@ class ConstrainResolution(io.ComfyNode):
         image: torch.Tensor,
         target_width: int,
         target_height: int,
-        method: str = ResizeMethod.BILINEAR.value
+        method: str = ResizeMethod.LANCZOS.value
     ) -> torch.Tensor:
         """
         Resize image tensor to target dimensions.
@@ -328,6 +385,14 @@ class ConstrainResolution(io.ComfyNode):
             Cropped tensor
         """
         batch, height, width, channels = image.shape
+
+        if target_width > width or target_height > height:
+            # Slicing past the end silently yields a smaller tensor than the
+            # width/height this node reports, so refuse instead.
+            raise ValueError(
+                f"crop target {target_width}x{target_height} is larger than the source "
+                f"image {width}x{height}; crop_image cannot grow an image."
+            )
 
         # Calculate crop amounts
         width_diff = width - target_width
@@ -409,51 +474,43 @@ class ConstrainResolution(io.ComfyNode):
         # ratios can blow up the long side and risk OOM). Strict mode caps this instead.
         if constraint_mode == ConstraintMode.MIN_RES.value:
             upscale_factor = max(target_width / width, target_height / height)
-            if upscale_factor > 4:
+            if upscale_factor > UPSCALE_WARN_FACTOR:
                 logger.warning(
                     "Upscaling by %.1fx to %dx%d to satisfy min_res on an extreme aspect ratio. "
                     "Use 'Prioritize Max Resolution (Strict)' to cap output size and avoid large upscales.",
                     upscale_factor, target_width, target_height
                 )
 
-        # Resize image to target dimensions
-        resized_image = cls.resize_image(image, target_width, target_height, resize_method)
-
-        # Calculate aspect ratio after resize
         final_aspect_ratio = cls.calculate_aspect_ratio(target_width, target_height)
 
-        # Check if cropping is needed and enabled
-        if crop_as_required and original_aspect_ratio > 0:
-            # Determine if we need to crop
-            # After rounding to multiples, the aspect ratio might have changed slightly
-            # We'll resize to maintain aspect ratio on the larger dimension, then crop
+        # Decide on cropping before resizing, so only one resize is ever done.
+        # Compare exact ratios rather than the 4-decimal rounded outputs: a very
+        # tall image rounds to 0.0, which would skip the crop and distort it.
+        exact_original_ratio = width / height
+        exact_final_ratio = target_width / target_height
+        aspect_ratio_deviation = abs(
+            (exact_final_ratio - exact_original_ratio) / exact_original_ratio * 100
+        )
 
-            aspect_ratio_deviation = abs((final_aspect_ratio - original_aspect_ratio) / original_aspect_ratio * 100)
+        if crop_as_required and aspect_ratio_deviation > 0.1:
+            # Resize preserving aspect ratio so one side overshoots, then crop back.
+            # ceil + max keep the intermediate dimension at or above the target,
+            # so the crop below never has to grow the image.
+            if exact_original_ratio > exact_final_ratio:
+                # Original is wider: match height, overshoot and crop width
+                intermediate_width = max(target_width, math.ceil(target_height * width / height))
+                resized_image = cls.resize_image(image, intermediate_width, target_height, resize_method)
+            else:
+                # Original is taller: match width, overshoot and crop height
+                intermediate_height = max(target_height, math.ceil(target_width * height / width))
+                resized_image = cls.resize_image(image, target_width, intermediate_height, resize_method)
 
-            if aspect_ratio_deviation > 0.1:  # If more than 0.1% deviation
-                # Resize to preserve aspect ratio, making one dimension larger than target, then crop
-                # ceil + max keep the intermediate dimension at or above the target,
-                # so the crop below never has to grow the image
-                if width / height > target_width / target_height:
-                    # Original is wider (more landscape), resize based on height and crop width
-                    # This ensures height matches target, width will be larger and cropped
-                    intermediate_width = max(target_width, math.ceil(target_height * width / height))
-                    resized_image = cls.resize_image(image, intermediate_width, target_height, resize_method)
-                else:
-                    # Original is taller (more portrait), resize based on width and crop height
-                    # This ensures width matches target, height will be larger and cropped
-                    intermediate_height = max(target_height, math.ceil(target_width * height / width))
-                    resized_image = cls.resize_image(image, target_width, intermediate_height, resize_method)
+            resized_image = cls.crop_image(resized_image, target_width, target_height, crop_position)
+            logger.debug("Image cropped to achieve exact dimensions %dx%d", target_width, target_height)
+        else:
+            resized_image = cls.resize_image(image, target_width, target_height, resize_method)
 
-                # Crop to exact target dimensions
-                resized_image = cls.crop_image(resized_image, target_width, target_height, crop_position)
-
-                logger.debug("Image cropped to achieve exact dimensions %dx%d", target_width, target_height)
-
-        # Log aspect ratio deviation warning if significant
-        if original_aspect_ratio > 0 and not crop_as_required:
-            aspect_ratio_deviation = abs((final_aspect_ratio - original_aspect_ratio) / original_aspect_ratio * 100)
-            if aspect_ratio_deviation > 1:  # 1% tolerance for rounding
+            if not crop_as_required and aspect_ratio_deviation > 1:  # 1% tolerance for rounding
                 logger.info(
                     "Aspect ratio changed by %.2f%% due to rounding. "
                     "Enable 'Crop as Required' to preserve exact aspect ratio.",

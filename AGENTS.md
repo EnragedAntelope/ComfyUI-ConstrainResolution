@@ -4,11 +4,11 @@ A ComfyUI node that resizes any image to fit your model's resolution rules: a mi
 
 ## Current state
 
-_Last verified: 2026-08-08_
+_Last verified: 2026-08-19_
 
-- **Status:** released v2.3.2 (`pyproject.toml`). Stable and feature-complete for what it sets out to do. Published to the Comfy Registry — `.github/workflows/publish_action.yml` fires on a `pyproject.toml` version change on `main`, so a functional change needs a version bump or it never ships.
+- **Status:** released v2.4.0 (`pyproject.toml`). Stable and feature-complete for what it sets out to do. Published to the Comfy Registry — `.github/workflows/publish_action.yml` fires on a `pyproject.toml` version change on `main`, so a functional change needs a version bump or it never ships.
 - **Works:** both constraint modes (Prioritize Min Resolution, Prioritize Max Resolution strict); divisibility by 2/8/16/32/64 enforced together with the min/max limits so reported width/height always match the output tensor; minimal smart cropping with a configurable crop position; all five resize methods; the full output set (resized image, original passthrough, width, height, final and original aspect ratios). `.github/workflows/test.yml` runs the pytest suite.
-- **In progress:** nothing — the last release hardened `execute()` edge cases and added CI, closing out the v2.3 line.
+- **In progress:** nothing — v2.4.0 closed out a full audit: a memory-exhaustion guard on extreme-aspect-ratio upscales, fixes for configurations that silently no-opped, a `validate_inputs` signature that was disabling ComfyUI's own input validation, and removal of a duplicate resize.
 - **Known gaps / next steps:** no batch-specific handling beyond what ComfyUI's own resizer provides; behaviour under extreme aspect ratios is covered by tests but has had little real-world exercise; the README screenshots track v2.3.1 and would need refreshing alongside any visible change.
 - **Deep docs:** none — `README.md` is the user-facing reference and `nodes.py` is the whole implementation.
 
@@ -53,6 +53,8 @@ pytest
 - Single-file node — `nodes.py` is the entire feature. Keep it self-contained.
 - Zero pip dependencies. Drops into `custom_nodes/` — no pip install needed.
 - Divisibility, min/max, and crop dimensions are enforced together — reported width/height always match the actual output tensor.
+- Unsatisfiable or memory-exhausting settings raise `ValueError` rather than returning a zero dimension; `calculate_optimal_dimensions` never returns 0 for a non-empty input.
+- `validate_inputs` must NOT take `**kwargs`: ComfyUI skips its own range and combo-option validation for every input on the node if it does (see `validate_inputs` in ComfyUI's `execution.py`).
 - `resize_method` defaults to `lanczos` (sharpest). Options: lanczos, bicubic, bilinear, nearest-exact (pixel art/masks), area (big downscales).
 - When `crop_as_required=False` and `multiple_of=1`, no cropping occurs — keeps every pixel.
 - The node uses ComfyUI v3 schema (`comfy_api.latest`).
@@ -61,7 +63,7 @@ pytest
 
 This file is **public-safe by default**. Never add local paths, credentials, API keys, personal data, infrastructure details, or subscription info.
 
-Before pushing: `pwsh scripts/check-agents-md.ps1 AGENTS.md CLAUDE.md` — must exit 0.
+Before pushing, re-read this file and confirm it contains no local paths, credentials, or personal data.
 
 ## Maintenance
 
