@@ -7,8 +7,10 @@ on:
     paths:
       - "pyproject.toml"
 
+# The publish action only reads the repo and authenticates to the registry API
+# with its own token input; it never touches issues or any other scope.
 permissions:
-  issues: write
+  contents: read
 
 jobs:
   publish-node:
@@ -17,8 +19,10 @@ jobs:
     if: ${{ github.repository_owner == 'EnragedAntelope' }}
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        # actions/checkout v4.4.0 — pinned by SHA for supply-chain safety.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Publish Custom Node
-        uses: Comfy-Org/publish-node-action@v1
+        # Comfy-Org/publish-node-action 1.0.1
+        uses: Comfy-Org/publish-node-action@7578cdb0c1410f2515e6f9b1443c6859cab94f05
         with:
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
