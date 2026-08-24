@@ -74,6 +74,7 @@ Restart ComfyUI. No dependencies beyond ComfyUI itself (Python 3.10+).
 
 ## Version history
 
+- **v2.4.1**: Invalid Strict-mode settings (`multiple_of` above `max_res`) are now rejected when the workflow is queued instead of mid-execution; large-upscale warnings now fire in Strict mode too, so tiny sources blown up 10x+ are no longer silent; CI hardening (GitHub Actions pinned by commit SHA, pip dependency caching, torch bounded to known-good majors); new tests keep the node schema in sync with `execute()` and enforce tooltips on every input
 - **v2.4.0**: Refuse extreme-aspect-ratio upscales that would exhaust memory instead of attempting them (a 1×690 input at default settings previously asked for 704×485760, roughly 4 GB per batch item); fixed settings that silently passed the image through untouched (`multiple_of` above `max_res` in Strict mode, and thin strips at `multiple_of=1`); restored ComfyUI's built-in range and combo-option validation, which the previous `validate_inputs` signature disabled for every input; ~1.85× faster when cropping by dropping a resize whose result was discarded; crop decisions now use exact aspect ratios instead of 4-decimal rounded ones
 - **v2.3.2**: Added CI test workflow (pytest on Python 3.10–3.12); warn on very large upscales in "Prioritize Min Resolution" mode; pass malformed zero-dimension inputs through unchanged instead of erroring
 - **v2.3.1**: Rewrote README with current screenshots; enforce `min_res` even when rounding to a large `multiple_of` would dip below it
