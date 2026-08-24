@@ -1,7 +1,7 @@
 [project]
 name = "constrainresolution"
 description = "Resize images to fit min/max resolution limits with dimensions guaranteed divisible by 2/8/16/32/64. Aspect-ratio-preserving resize with smart cropping — ideal for image-to-image and image-to-video workflows."
-version = "2.4.0"
+version = "2.4.1"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = []
@@ -13,6 +13,16 @@ Repository = "https://github.com/EnragedAntelope/ComfyUI-ConstrainResolution"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"
+
+[tool.ruff]
+# Long descriptive strings (tooltips, error messages) run past the 88-char
+# default; 130 is the widest line actually in the tree.
+line-length = 130
+
+[tool.ruff.lint]
+# Pyflakes + pycodestyle errors + isort + pyupgrade + flake8-bugbear.
+# Pinned explicitly so a new ruff release cannot silently add rules and fail CI.
+select = ["E", "F", "I", "UP", "B"]
 
 [tool.comfy]
 PublisherId = "enragedantelope"

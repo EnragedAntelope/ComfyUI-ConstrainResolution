@@ -1,0 +1,9 @@
+# CI-only test dependencies (used by .github/workflows/test.yml).
+# The node pack itself ships with zero pip dependencies: conftest.py mocks
+# comfy_api, and ComfyUI provides torch at runtime. torch is floored at 2.2
+# and capped below 3 so a future major release cannot silently change what
+# CI tests against.
+pytest>=8
+numpy>=1.26
+torch>=2.2,<3
+ruff>=0.6,<1

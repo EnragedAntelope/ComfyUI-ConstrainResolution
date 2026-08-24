@@ -35,7 +35,7 @@ Every image is rescaled so its longest side lands on `max_res` — images alread
 
 **Constraint modes** — with a very wide or very tall image, min and max can conflict:
 
-- **Prioritize Min Resolution**: neither dimension goes below `min_res`, even if the long side must exceed `max_res`. Best default. Beyond roughly a 52:1 aspect ratio the required output would be large enough to exhaust memory, so the node reports an error instead of trying — switch to Strict mode for those.
+- **Prioritize Min Resolution**: neither dimension goes below `min_res`, even if the long side must exceed `max_res`. Best default. At the default settings, beyond roughly a 52:1 aspect ratio the required output would be large enough to exhaust memory, so the node reports an error instead of trying — switch to Strict mode for those. The limit scales with `max_res` up to an absolute ceiling of 64 MP, and never refuses an output that fits inside your own `max_res × max_res` box.
 - **Prioritize Max Resolution (Strict)**: output always fits in a `max_res × max_res` box (hard VRAM cap), even if the short side lands below `min_res`.
 
 ## Outputs
@@ -74,6 +74,7 @@ Restart ComfyUI. No dependencies beyond ComfyUI itself (Python 3.10+).
 
 ## Version history
 
+- **v2.4.1**: Invalid settings are now rejected when the workflow is queued instead of mid-execution — `multiple_of` above `max_res` in Strict mode, plus out-of-range `min_res`/`max_res`/`multiple_of` and unknown constraint modes coming from hand-written API workflows, which the widget bounds alone no longer covered; the memory guard gained an absolute 64 MP ceiling, so it stays meaningful at large `max_res` instead of permitting multi-gigabyte outputs; large-upscale warnings now fire in Strict mode too, so tiny sources blown up 10x+ are no longer silent; CI hardening (GitHub Actions pinned by commit SHA, pip dependency caching, torch bounded to known-good majors); new tests keep the node schema in sync with `execute()` and enforce tooltips on every input
 - **v2.4.0**: Refuse extreme-aspect-ratio upscales that would exhaust memory instead of attempting them (a 1×690 input at default settings previously asked for 704×485760, roughly 4 GB per batch item); fixed settings that silently passed the image through untouched (`multiple_of` above `max_res` in Strict mode, and thin strips at `multiple_of=1`); restored ComfyUI's built-in range and combo-option validation, which the previous `validate_inputs` signature disabled for every input; ~1.85× faster when cropping by dropping a resize whose result was discarded; crop decisions now use exact aspect ratios instead of 4-decimal rounded ones
 - **v2.3.2**: Added CI test workflow (pytest on Python 3.10–3.12); warn on very large upscales in "Prioritize Min Resolution" mode; pass malformed zero-dimension inputs through unchanged instead of erroring
 - **v2.3.1**: Rewrote README with current screenshots; enforce `min_res` even when rounding to a large `multiple_of` would dip below it

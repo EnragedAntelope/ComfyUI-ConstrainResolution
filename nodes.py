@@ -1,7 +1,6 @@
 import logging
 import math
 from enum import Enum
-from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -16,8 +15,23 @@ logger = logging.getLogger(__name__)
 # more than this many max_res-sized boxes and tell the user to switch modes.
 MAX_OUTPUT_PIXEL_BUDGET_FACTOR = 16
 
+# The relative budget above is a multiplier, so it grows with the square of
+# max_res: at max_res=8192 it would permit a 1-gigapixel output (~12 GB per
+# batch item), which is the very thing it exists to prevent. Cap it in absolute
+# terms too. 64 MP is ~768 MB per batch item at float32 RGB.
+MAX_OUTPUT_PIXELS = 64 * 1024 * 1024
+
 # Upscales beyond this factor are legal but worth flagging in the log.
 UPSCALE_WARN_FACTOR = 4
+
+# Bounds shared by define_schema() and validate_inputs(). ComfyUI applies a
+# node's declared min/max only to inputs that validate_inputs does NOT name
+# (execution.py: `if x not in validate_function_inputs`), so every input named
+# there must have its range re-checked by hand or it goes unvalidated.
+MIN_RESOLUTION = 1
+MAX_RESOLUTION = 65536
+MIN_MULTIPLE_OF = 1
+MAX_MULTIPLE_OF = 256
 
 
 # (str, Enum) instead of StrEnum keeps the pack importable on Python 3.10,
@@ -82,8 +96,8 @@ class ConstrainResolution(io.ComfyNode):
                 io.Int.Input(
                     "min_res",
                     default=704,
-                    min=1,
-                    max=65536,
+                    min=MIN_RESOLUTION,
+                    max=MAX_RESOLUTION,
                     tooltip=(
                         "Minimum resolution in pixels for width and height. "
                         "Neither output dimension will fall below this."
@@ -92,8 +106,8 @@ class ConstrainResolution(io.ComfyNode):
                 io.Int.Input(
                     "max_res",
                     default=1280,
-                    min=1,
-                    max=65536,
+                    min=MIN_RESOLUTION,
+                    max=MAX_RESOLUTION,
                     tooltip=(
                         "Maximum resolution in pixels. Every image is rescaled so its longest side "
                         "lands here, so images already in range are resized too. In "
@@ -104,8 +118,8 @@ class ConstrainResolution(io.ComfyNode):
                 io.Int.Input(
                     "multiple_of",
                     default=2,
-                    min=1,
-                    max=256,
+                    min=MIN_MULTIPLE_OF,
+                    max=MAX_MULTIPLE_OF,
                     tooltip=(
                         "Ensures output dimensions are multiples of this number. "
                         "Common values: 2 (most models), 8, 16, 32, or 64 (optimal performance). "
@@ -193,23 +207,51 @@ class ConstrainResolution(io.ComfyNode):
         )
 
     @classmethod
-    def validate_inputs(cls, min_res, max_res, multiple_of):
+    def validate_inputs(cls, min_res, max_res, multiple_of, constraint_mode):
         """Validate input parameters.
 
         The signature deliberately declares only the values checked here and
         takes no **kwargs: ComfyUI skips its own range and combo-option
         validation for every input once this function accepts **kwargs
         (see ``validate_inputs`` in ComfyUI's execution.py). Listing just these
-        three leaves the combo inputs to ComfyUI's built-in checks.
+        four leaves the other inputs to ComfyUI's built-in checks.
+
+        The flip side is that ComfyUI also skips its checks for the four names
+        listed here, so their schema bounds are re-asserted below. The widgets
+        already clamp in the UI; a hand-written or generated API workflow does
+        not, and an unbounded max_res is what makes the pixel budget in
+        ``calculate_optimal_dimensions`` meaningless.
         """
+        for name, value in (("min_res", min_res), ("max_res", max_res)):
+            if not MIN_RESOLUTION <= value <= MAX_RESOLUTION:
+                return (
+                    f"{name} must be between {MIN_RESOLUTION} and {MAX_RESOLUTION}, got {value}"
+                )
+
+        if not MIN_MULTIPLE_OF <= multiple_of <= MAX_MULTIPLE_OF:
+            return (
+                f"multiple_of must be between {MIN_MULTIPLE_OF} and {MAX_MULTIPLE_OF}, "
+                f"got {multiple_of}"
+            )
+
+        valid_modes = [mode.value for mode in ConstraintMode]
+        if constraint_mode not in valid_modes:
+            return f"constraint_mode must be one of {valid_modes}, got {constraint_mode!r}"
+
         if max_res < min_res:
             return f"max_res ({max_res}) must be greater than or equal to min_res ({min_res})"
 
-        if multiple_of < 1:
-            return f"multiple_of must be at least 1, got {multiple_of}"
-
-        if min_res < 1:
-            return f"min_res must be at least 1, got {min_res}"
+        if (
+            constraint_mode == ConstraintMode.MAX_RES_STRICT.value
+            and multiple_of > max_res
+        ):
+            # Same failure calculate_optimal_dimensions raises at execution time;
+            # catching it here rejects the workflow at queue time instead.
+            return (
+                f"multiple_of ({multiple_of}) is larger than max_res ({max_res}), so no valid "
+                f"output size exists in '{ConstraintMode.MAX_RES_STRICT.value}' mode. "
+                f"Lower multiple_of or raise max_res."
+            )
 
         return True
 
@@ -237,7 +279,7 @@ class ConstrainResolution(io.ComfyNode):
         max_res: int,
         multiple_of: int,
         constraint_mode: str
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """Calculate optimal dimensions based on constraints"""
         if multiple_of < 1:
             raise ValueError(f"multiple_of must be at least 1, got {multiple_of}")
@@ -307,7 +349,11 @@ class ConstrainResolution(io.ComfyNode):
         #    process. Only reachable in min-res mode, which is the only mode
         #    without an upper bound.
         if constraint_mode == ConstraintMode.MIN_RES.value:
-            budget = max(min_res, max_res) ** 2 * MAX_OUTPUT_PIXEL_BUDGET_FACTOR
+            # Allow the user's own max_res box unconditionally, a multiple of it
+            # for moderately extreme ratios, and never more than the absolute
+            # ceiling — so the guard stays meaningful at every max_res.
+            box = max(min_res, max_res) ** 2
+            budget = max(box, min(box * MAX_OUTPUT_PIXEL_BUDGET_FACTOR, MAX_OUTPUT_PIXELS))
             if final_width * final_height > budget:
                 raise ValueError(
                     f"'{ConstraintMode.MIN_RES.value}' needs {final_width}x{final_height} "
@@ -470,15 +516,23 @@ class ConstrainResolution(io.ComfyNode):
                 original_aspect_ratio, original_aspect_ratio
             )
 
-        # Warn when Prioritize Min Resolution forces a large upscale (extreme aspect
-        # ratios can blow up the long side and risk OOM). Strict mode caps this instead.
-        if constraint_mode == ConstraintMode.MIN_RES.value:
-            upscale_factor = max(target_width / width, target_height / height)
-            if upscale_factor > UPSCALE_WARN_FACTOR:
+        # Warn when a resize forces a large upscale (>4x): legal, but tiny sources
+        # produce visibly soft results, and min-res mode can also blow up memory
+        # on extreme aspect ratios. Fires in both modes — strict mode bounds the
+        # size, not the blur.
+        upscale_factor = max(target_width / width, target_height / height)
+        if upscale_factor > UPSCALE_WARN_FACTOR:
+            if constraint_mode == ConstraintMode.MIN_RES.value:
                 logger.warning(
                     "Upscaling by %.1fx to %dx%d to satisfy min_res on an extreme aspect ratio. "
                     "Use 'Prioritize Max Resolution (Strict)' to cap output size and avoid large upscales.",
                     upscale_factor, target_width, target_height
+                )
+            else:
+                logger.warning(
+                    "Upscaling by %.1fx to %dx%d from a %dx%d source; the result will look soft. "
+                    "A larger source image will give better quality.",
+                    upscale_factor, target_width, target_height, width, height
                 )
 
         final_aspect_ratio = cls.calculate_aspect_ratio(target_width, target_height)
