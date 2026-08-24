@@ -19,10 +19,12 @@ jobs:
     if: ${{ github.repository_owner == 'EnragedAntelope' }}
     steps:
       - name: Check out code
-        # actions/checkout v4.4.0 — pinned by SHA for supply-chain safety.
+        # actions/checkout v4.4.0, pinned by SHA for supply-chain safety.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Publish Custom Node
-        # Comfy-Org/publish-node-action 1.0.1
-        uses: Comfy-Org/publish-node-action@7578cdb0c1410f2515e6f9b1443c6859cab94f05
+        # The SHA the upstream-documented @v1 branch points at (verified 2026-08-24).
+        # Do NOT pin the 1.0.1 tag instead: that commit predates the v1 branch and
+        # still calls `comfy tracking disable`, which current comfy-cli no longer has.
+        uses: Comfy-Org/publish-node-action@0eb6cd742945443bee7f79eeddd4f732780029a1
         with:
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}

@@ -4,7 +4,15 @@ import types
 
 import pytest
 import torch
-from nodes import ConstrainResolution, ConstraintMode, ResizeMethod
+
+from nodes import (
+    MAX_MULTIPLE_OF,
+    MAX_OUTPUT_PIXELS,
+    MAX_RESOLUTION,
+    ConstrainResolution,
+    ConstraintMode,
+    ResizeMethod,
+)
 
 STRICT = ConstraintMode.MAX_RES_STRICT.value
 MIN = ConstraintMode.MIN_RES.value
@@ -244,9 +252,23 @@ class TestUpscaleBudget:
     def test_budget_scales_with_max_res(self):
         """A larger max_res raises the ceiling rather than being a fixed cap."""
         with pytest.raises(ValueError):
-            calc(1, 400, 704, 1280, 2, MIN)
-        w, h = calc(1, 400, 704, 8192, 2, MIN)
+            calc(1, 100, 704, 1280, 2, MIN)
+        w, h = calc(1, 100, 704, 2048, 2, MIN)
         assert min(w, h) >= 704
+
+    def test_budget_has_an_absolute_ceiling(self):
+        """The relative budget grows with max_res squared, so on its own it
+        stops guarding anything at large max_res: 704x281600 is ~2.4 GB per
+        batch item, which the multiplier alone would have waved through."""
+        with pytest.raises(ValueError, match="safety limit"):
+            calc(1, 400, 704, 8192, 2, MIN)
+
+    def test_ceiling_never_refuses_the_users_own_max_res_box(self):
+        """Strict mode allows a full max_res x max_res output, so min-res mode
+        must not refuse the same size just because it exceeds the ceiling."""
+        w, h = calc(1000, 1000, 16384, 16384, 2, MIN)
+        assert w * h > MAX_OUTPUT_PIXELS
+        assert w == h == 16384
 
 
 class TestDegenerateConfigs:
@@ -364,6 +386,37 @@ class TestValidateInputs:
 
     def test_strict_mode_accepts_valid_combination(self):
         assert ConstrainResolution.validate_inputs(704, 1280, 32, STRICT) is True
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            (704, MAX_RESOLUTION + 1, 2, MIN),
+            (MAX_RESOLUTION + 1, MAX_RESOLUTION + 1, 2, MIN),
+            (704, 1280, MAX_MULTIPLE_OF + 1, MIN),
+        ],
+    )
+    def test_rejects_out_of_range_values(self, args):
+        """Naming an input in validate_inputs makes ComfyUI skip its own
+        min/max check for it, so the schema bounds have to be re-asserted here.
+        An unbounded max_res would also make the pixel budget meaningless."""
+        message = ConstrainResolution.validate_inputs(*args)
+        assert isinstance(message, str), f"{args} should have been rejected"
+        assert "must be between" in message
+
+    def test_rejects_unknown_constraint_mode(self):
+        message = ConstrainResolution.validate_inputs(704, 1280, 2, "TypoMode")
+        assert isinstance(message, str)
+        assert "constraint_mode" in message
+
+    def test_schema_bounds_match_validate_inputs(self, monkeypatch):
+        """The bounds are shared constants precisely so the widget and the
+        queue-time check cannot drift apart."""
+        captured = TestSchemaContract._capture(monkeypatch)
+        ConstrainResolution.define_schema()
+        bounds = {name: kwargs for name, kwargs in captured["inputs"]}
+        assert bounds["max_res"]["max"] == MAX_RESOLUTION
+        assert bounds["min_res"]["max"] == MAX_RESOLUTION
+        assert bounds["multiple_of"]["max"] == MAX_MULTIPLE_OF
 
 
 class TestExtremeRatioCropping:
