@@ -24,16 +24,18 @@ This node applies all three rules in one step and **guarantees divisibility on e
 |---|---|---|
 | `image` | — | Image (or batch) to resize |
 | `min_res` | 704 | Neither dimension will end up below this |
-| `max_res` | 1280 | Neither dimension will end up above this |
+| `max_res` | 1280 | Bounds the longest side. In the default mode the long side may exceed it on extreme aspect ratios — see constraint modes below |
 | `multiple_of` | 2 | Output width and height are always divisible by this (1 disables) |
 | `resize_method` | lanczos | Interpolation: `lanczos` (sharpest), `bicubic`, `bilinear`, `nearest-exact` (pixel art/masks), `area` (big downscales) |
 | `constraint_mode` | Prioritize Min Resolution | What wins when an extreme aspect ratio can't satisfy both limits (see below) |
 | `crop_as_required` | True | Crop minimally to hit exact dimensions instead of distorting the aspect ratio |
 | `crop_position` | center | Which part to keep when cropping: center / top / bottom / left / right |
 
+Every image is rescaled so its longest side lands on `max_res` — images already inside the range are resized too, not passed through. This is what makes the output size predictable for batching.
+
 **Constraint modes** — with a very wide or very tall image, min and max can conflict:
 
-- **Prioritize Min Resolution**: neither dimension goes below `min_res`, even if the long side must exceed `max_res`. Best default.
+- **Prioritize Min Resolution**: neither dimension goes below `min_res`, even if the long side must exceed `max_res`. Best default. Beyond roughly a 52:1 aspect ratio the required output would be large enough to exhaust memory, so the node reports an error instead of trying — switch to Strict mode for those.
 - **Prioritize Max Resolution (Strict)**: output always fits in a `max_res × max_res` box (hard VRAM cap), even if the short side lands below `min_res`.
 
 ## Outputs
@@ -68,9 +70,11 @@ Restart ComfyUI. No dependencies beyond ComfyUI itself (Python 3.10+).
 - Resizing uses ComfyUI's own resizer (`comfy.utils.common_upscale`), so results match core resize nodes; bicubic/lanczos output is clamped to the valid range to avoid overshoot artifacts.
 - Divisibility, min/max, and crop dimensions are enforced together — the reported `width`/`height` always match the actual output tensor.
 - Built on the ComfyUI v3 node API (`comfy_api.latest`).
+- Impossible settings fail with a clear error rather than silently passing the image through — e.g. `multiple_of` larger than `max_res` in Strict mode, where no valid output size exists.
 
 ## Version history
 
+- **v2.4.0**: Refuse extreme-aspect-ratio upscales that would exhaust memory instead of attempting them (a 1×690 input at default settings previously asked for 704×485760, roughly 4 GB per batch item); fixed settings that silently passed the image through untouched (`multiple_of` above `max_res` in Strict mode, and thin strips at `multiple_of=1`); restored ComfyUI's built-in range and combo-option validation, which the previous `validate_inputs` signature disabled for every input; ~1.85× faster when cropping by dropping a resize whose result was discarded; crop decisions now use exact aspect ratios instead of 4-decimal rounded ones
 - **v2.3.2**: Added CI test workflow (pytest on Python 3.10–3.12); warn on very large upscales in "Prioritize Min Resolution" mode; pass malformed zero-dimension inputs through unchanged instead of erroring
 - **v2.3.1**: Rewrote README with current screenshots; enforce `min_res` even when rounding to a large `multiple_of` would dip below it
 - **v2.3.0**: Added `resize_method` selection (lanczos default); fixed a rare off-by-one in cropped output size; removed unused numpy dependency; Python 3.10 compatibility; proper logging
