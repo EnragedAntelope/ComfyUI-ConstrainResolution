@@ -193,14 +193,14 @@ class ConstrainResolution(io.ComfyNode):
         )
 
     @classmethod
-    def validate_inputs(cls, min_res, max_res, multiple_of):
+    def validate_inputs(cls, min_res, max_res, multiple_of, constraint_mode):
         """Validate input parameters.
 
         The signature deliberately declares only the values checked here and
         takes no **kwargs: ComfyUI skips its own range and combo-option
         validation for every input once this function accepts **kwargs
         (see ``validate_inputs`` in ComfyUI's execution.py). Listing just these
-        three leaves the combo inputs to ComfyUI's built-in checks.
+        four leaves the combo inputs to ComfyUI's built-in checks.
         """
         if max_res < min_res:
             return f"max_res ({max_res}) must be greater than or equal to min_res ({min_res})"
@@ -210,6 +210,18 @@ class ConstrainResolution(io.ComfyNode):
 
         if min_res < 1:
             return f"min_res must be at least 1, got {min_res}"
+
+        if (
+            constraint_mode == ConstraintMode.MAX_RES_STRICT.value
+            and multiple_of > max_res
+        ):
+            # Same failure calculate_optimal_dimensions raises at execution time;
+            # catching it here rejects the workflow at queue time instead.
+            return (
+                f"multiple_of ({multiple_of}) is larger than max_res ({max_res}), so no valid "
+                f"output size exists in '{ConstraintMode.MAX_RES_STRICT.value}' mode. "
+                f"Lower multiple_of or raise max_res."
+            )
 
         return True
 
@@ -470,15 +482,23 @@ class ConstrainResolution(io.ComfyNode):
                 original_aspect_ratio, original_aspect_ratio
             )
 
-        # Warn when Prioritize Min Resolution forces a large upscale (extreme aspect
-        # ratios can blow up the long side and risk OOM). Strict mode caps this instead.
-        if constraint_mode == ConstraintMode.MIN_RES.value:
-            upscale_factor = max(target_width / width, target_height / height)
-            if upscale_factor > UPSCALE_WARN_FACTOR:
+        # Warn when a resize forces a large upscale (>4x): legal, but tiny sources
+        # produce visibly soft results, and min-res mode can also blow up memory
+        # on extreme aspect ratios. Fires in both modes — strict mode bounds the
+        # size, not the blur.
+        upscale_factor = max(target_width / width, target_height / height)
+        if upscale_factor > UPSCALE_WARN_FACTOR:
+            if constraint_mode == ConstraintMode.MIN_RES.value:
                 logger.warning(
                     "Upscaling by %.1fx to %dx%d to satisfy min_res on an extreme aspect ratio. "
                     "Use 'Prioritize Max Resolution (Strict)' to cap output size and avoid large upscales.",
                     upscale_factor, target_width, target_height
+                )
+            else:
+                logger.warning(
+                    "Upscaling by %.1fx to %dx%d from a %dx%d source; the result will look soft. "
+                    "A larger source image will give better quality.",
+                    upscale_factor, target_width, target_height, width, height
                 )
 
         final_aspect_ratio = cls.calculate_aspect_ratio(target_width, target_height)

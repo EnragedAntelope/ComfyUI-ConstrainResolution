@@ -1,4 +1,6 @@
+import inspect
 import sys
+import types
 
 import pytest
 import torch
@@ -198,12 +200,21 @@ class TestExecuteGuards:
             run_node(image, constraint_mode=MIN)
         assert any("Upscaling by" in r.message for r in caplog.records)
 
-    def test_normal_image_does_not_warn(self, caplog):
-        """A normal image must not trigger the upscale warning."""
+    @pytest.mark.parametrize("mode", [MIN, STRICT])
+    def test_normal_image_does_not_warn(self, caplog, mode):
+        """A normal image must not trigger the upscale warning in either mode."""
         image = torch.rand(1, 800, 1000, 3)
         with caplog.at_level("WARNING"):
-            run_node(image, constraint_mode=MIN)
+            run_node(image, constraint_mode=mode)
         assert not any("Upscaling by" in r.message for r in caplog.records)
+
+    def test_strict_mode_large_upscale_warns(self, caplog):
+        """Strict mode bounds the size, not the blur: a tiny source blown up
+        12.8x deserves the same log signal min-res mode gives."""
+        image = torch.rand(1, 100, 100, 3)
+        with caplog.at_level("WARNING"):
+            run_node(image, constraint_mode=STRICT)
+        assert any("Upscaling by" in r.message for r in caplog.records)
 
 
 class TestUpscaleBudget:
@@ -323,21 +334,36 @@ class TestValidateInputs:
     def test_signature_has_no_kwargs(self):
         """**kwargs makes ComfyUI skip its own range and combo validation for
         every input on this node (execution.py: validate_has_kwargs)."""
-        import inspect
         spec = inspect.getfullargspec(ConstrainResolution.validate_inputs.__func__)
         assert spec.varkw is None
         assert spec.varargs is None
-        assert spec.args == ["cls", "min_res", "max_res", "multiple_of"]
+        assert spec.args == ["cls", "min_res", "max_res", "multiple_of", "constraint_mode"]
 
     def test_accepts_valid_inputs(self):
-        assert ConstrainResolution.validate_inputs(704, 1280, 2) is True
+        assert ConstrainResolution.validate_inputs(704, 1280, 2, MIN) is True
 
     def test_rejects_max_below_min(self):
-        assert isinstance(ConstrainResolution.validate_inputs(1280, 704, 2), str)
+        assert isinstance(ConstrainResolution.validate_inputs(1280, 704, 2, MIN), str)
 
     def test_rejects_bad_multiple_and_min(self):
-        assert isinstance(ConstrainResolution.validate_inputs(704, 1280, 0), str)
-        assert isinstance(ConstrainResolution.validate_inputs(0, 1280, 2), str)
+        assert isinstance(ConstrainResolution.validate_inputs(704, 1280, 0, MIN), str)
+        assert isinstance(ConstrainResolution.validate_inputs(0, 1280, 2, MIN), str)
+
+    def test_strict_mode_rejects_multiple_of_above_max_res_at_queue_time(self):
+        # calculate_optimal_dimensions raises this at execution time; catching
+        # it in validate_inputs rejects the workflow when it is queued instead.
+        # 256 > max_res=128 with min_res <= max_res, so this is the only failing rule.
+        message = ConstrainResolution.validate_inputs(64, 128, 256, STRICT)
+        assert isinstance(message, str)
+        assert "larger than max_res" in message
+
+    def test_min_res_mode_tolerates_multiple_of_above_max_res(self):
+        # Min-res mode bumps dimensions up to the next multiple (64x128 input,
+        # multiple_of=256 -> 256x256), so a large multiple_of is valid there.
+        assert ConstrainResolution.validate_inputs(64, 128, 256, MIN) is True
+
+    def test_strict_mode_accepts_valid_combination(self):
+        assert ConstrainResolution.validate_inputs(704, 1280, 32, STRICT) is True
 
 
 class TestExtremeRatioCropping:
@@ -348,3 +374,50 @@ class TestExtremeRatioCropping:
             image, multiple_of=32, constraint_mode=STRICT
         )
         assert resized.shape == (1, out_h, out_w, 3)
+
+
+class TestSchemaContract:
+    """conftest mocks comfy_api, so nothing else exercises define_schema().
+    Schema drift - an input renamed while execute() was not - would only
+    surface as a load failure inside real ComfyUI."""
+
+    @staticmethod
+    def _capture(monkeypatch):
+        mock_io = sys.modules['comfy_api.latest'].io
+        captured = {"inputs": [], "schema": None}
+
+        def make_recorder(bucket):
+            def factory(*args, **kwargs):
+                bucket.append((args[0] if args else "", kwargs))
+                return None
+            return factory
+
+        def fake_schema(**kwargs):
+            captured["schema"] = kwargs
+            return kwargs
+
+        for kind in ("Image", "Mask", "Latent", "Int", "Float", "String", "Combo", "Boolean"):
+            namespace = types.SimpleNamespace()
+            namespace.Input = make_recorder(captured["inputs"])
+            namespace.Output = make_recorder([])
+            monkeypatch.setattr(mock_io, kind, namespace, raising=False)
+        monkeypatch.setattr(mock_io, "Schema", fake_schema, raising=False)
+        return captured
+
+    def test_execute_params_are_all_schema_inputs(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        ConstrainResolution.define_schema()
+
+        schema_names = {name for name, _ in captured["inputs"]}
+        execute_params = set(inspect.signature(ConstrainResolution.execute).parameters)
+        missing = execute_params - schema_names
+        assert not missing, f"execute() params missing from define_schema(): {missing}"
+
+    def test_every_input_documents_itself(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        ConstrainResolution.define_schema()
+
+        unexplained = [name for name, kwargs in captured["inputs"] if not kwargs.get("tooltip")]
+        assert not unexplained, f"schema inputs missing tooltips: {unexplained}"
+        assert captured["schema"], "io.Schema(...) was never called"
+        assert captured["schema"].get("description")
