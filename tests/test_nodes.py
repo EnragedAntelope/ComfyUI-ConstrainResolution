@@ -11,6 +11,7 @@ from nodes import (
     MAX_RESOLUTION,
     ConstrainResolution,
     ConstraintMode,
+    CropPosition,
     ResizeMethod,
 )
 
@@ -350,6 +351,25 @@ class TestSingleResize:
         image = torch.rand(1, 1000, 1000, 3)
         run_node(image, crop_as_required=False, multiple_of=32)
         assert len(calls) == 1
+
+    @pytest.mark.parametrize("position", [p.value for p in CropPosition])
+    def test_strict_thin_strip_never_resizes_past_output(self, monkeypatch, position):
+        """Resizing before cropping built a 64x640000 intermediate for a 1x10000 strip."""
+        calls = []
+        real = ConstrainResolution.resize_image
+
+        def counting(image, w, h, method=None):
+            calls.append((w, h))
+            return real(image, w, h, method)
+
+        monkeypatch.setattr(ConstrainResolution, "resize_image", staticmethod(counting))
+        image = torch.rand(1, 10000, 1, 3)
+        resized, _, out_w, out_h, _, _ = run_node(
+            image, multiple_of=64, constraint_mode=STRICT,
+            crop_position=position,
+        )
+        assert calls == [(out_w, out_h)]
+        assert resized.shape == (1, out_h, out_w, 3)
 
 
 class TestValidateInputs:
