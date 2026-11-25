@@ -547,19 +547,19 @@ class ConstrainResolution(io.ComfyNode):
         )
 
         if crop_as_required and aspect_ratio_deviation > 0.1:
-            # Resize preserving aspect ratio so one side overshoots, then crop back.
-            # ceil + max keep the intermediate dimension at or above the target,
-            # so the crop below never has to grow the image.
+            # Crop the source to the target aspect ratio, then resize once. Resizing
+            # first would build an overshooting intermediate that, on a thin strip
+            # in strict mode, can be hundreds of times larger than the output.
             if exact_original_ratio > exact_final_ratio:
-                # Original is wider: match height, overshoot and crop width
-                intermediate_width = max(target_width, math.ceil(target_height * width / height))
-                resized_image = cls.resize_image(image, intermediate_width, target_height, resize_method)
+                # Original is wider: keep full height, crop width
+                crop_width = min(width, max(1, round(height * exact_final_ratio)))
+                cropped = cls.crop_image(image, crop_width, height, crop_position)
             else:
-                # Original is taller: match width, overshoot and crop height
-                intermediate_height = max(target_height, math.ceil(target_width * height / width))
-                resized_image = cls.resize_image(image, target_width, intermediate_height, resize_method)
+                # Original is taller: keep full width, crop height
+                crop_height = min(height, max(1, round(width / exact_final_ratio)))
+                cropped = cls.crop_image(image, width, crop_height, crop_position)
 
-            resized_image = cls.crop_image(resized_image, target_width, target_height, crop_position)
+            resized_image = cls.resize_image(cropped, target_width, target_height, resize_method)
             logger.debug("Image cropped to achieve exact dimensions %dx%d", target_width, target_height)
         else:
             resized_image = cls.resize_image(image, target_width, target_height, resize_method)
